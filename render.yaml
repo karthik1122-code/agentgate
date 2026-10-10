@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: agentgate
+    name: agentgate-api
     runtime: node
     plan: free
     buildCommand: npm ci && npm test
@@ -9,6 +9,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
+      # The Vercel site proxies /api to this service, so the real client address arrives in X-Forwarded-For.
+      - key: TRUST_PROXY
+        value: '1'
       - key: DATABASE_URL
         sync: false
       # Required in practice: the first account becomes the administrator, so set this before the URL is public.

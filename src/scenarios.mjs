@@ -3,7 +3,7 @@
  * not the agent. A planner is a pure function of the run's history, which is what lets a run resume after a restart.
  * An LLM-driven planner would implement the same { next({ input, history }) } interface.
  */
-const script = calls => ({ next: ({ history }) => (history.length < calls.length ? { call: calls[history.length] } : { done: true, result: `${history.length} calls finished` }) });
+const script = calls => ({ calls, next: ({ history }) => (history.length < calls.length ? { call: calls[history.length] } : { done: true, result: `${history.length} calls finished` }) });
 
 export const SCENARIOS = {
   'support-refund': {

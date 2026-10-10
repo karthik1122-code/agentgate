@@ -105,3 +105,50 @@ test('accounts mode: sign-in required, setup once, roles enforced, approver name
     assert.equal((await fetch(`${base}/api/runs`, { headers: aj.headers() })).status, 401, 'logout ends the session');
   } finally { await stop(); }
 });
+
+test('site: landing at / and dashboard at /app are served with no inline script, style or style attribute (the CSP forbids all three)', async () => {
+  await start({});
+  try {
+    for (const path of ['/', '/app']) {
+      const res = await fetch(`${base}${path}`); const html = await res.text();
+      assert.equal(res.status, 200, path); assert.match(res.headers.get('content-type'), /text\/html/);
+      assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/i, `${path} has an inline script`);
+      assert.doesNotMatch(html, /<style[\s>]/i, `${path} has an inline style block`);
+      assert.doesNotMatch(html, /\sstyle="/i, `${path} has an inline style attribute`);
+      assert.doesNotMatch(html, /\son\w+="/i, `${path} has an inline event handler`);
+    }
+    for (const path of ['/base.css', '/landing.css', '/app.css', '/landing.js', '/app.js', '/train.js', '/theme.js']) assert.equal((await fetch(`${base}${path}`)).status, 200, path);
+  } finally { await stop(); }
+});
+
+test('playground API: public, stateless, and answers like the real gate', async () => {
+  await start({ AUTH: 'on' });
+  try {
+    const call = (path, body) => fetch(`${base}/api/play/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const meta = await (await fetch(`${base}/api/play/meta`)).json();
+    assert.equal(meta.policy.default, 'deny');
+    const held = await (await call('check', { tool: 'refund_payment', args: { payment_id: 'pay_EF56GH78', amount: 500000, currency: 'INR' } })).json();
+    assert.equal(held.effect, 'approve');
+    const run = await (await call('run', { scenario: 'support-refund', approve: true })).json();
+    assert.equal(run.integrity.valid, true); assert.equal(run.status, 'completed');
+    const edited = structuredClone(run.events); edited[3].data.tool = 'send_email';
+    const bad = await (await call('verify', { events: edited })).json();
+    assert.equal(bad.valid, false); assert.equal(bad.at, 4);
+    // nothing the playground does shows up in the real runs or world
+    assert.equal((await fetch(`${base}/api/runs`)).status, 401, 'the real API still needs a sign-in');
+    assert.equal((await call('check', {})).status, 200);
+    assert.equal((await call('run', { scenario: 'nope' })).status, 400);
+    assert.equal((await call('verify', { events: [] })).status, 400);
+    assert.equal((await fetch(`${base}/api/play/check`)).status, 405);
+    assert.equal((await fetch(`${base}/api/play/nope`)).status, 404);
+    const huge = await call('verify', { events: [{ pad: 'x'.repeat(100 * 1024) }] }).catch(() => ({ status: 413 })); assert.equal(huge.status, 413);
+  } finally { await stop(); }
+});
+
+test('playground API: rate limited per client', async () => {
+  await start({ PLAY_RATE_LIMIT: '4' });
+  try {
+    const codes = []; for (let i = 0; i < 6; i++) { const r = await fetch(`${base}/api/play/meta`); codes.push(r.status); await r.text(); }
+    assert.deepEqual(codes, [200, 200, 200, 200, 429, 429]);
+  } finally { await stop(); }
+});

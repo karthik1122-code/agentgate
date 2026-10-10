@@ -11,9 +11,31 @@ npm install
 npm start                 # http://localhost:4200, in-memory store; the first visit creates the administrator
 DATABASE_URL=postgres://... npm start   # durable runs, accounts and sessions in Postgres
 AUTH=off npm start        # local demo only: no sign-in, anyone can approve
-npm test                  # 63 tests (69 with TEST_DATABASE_URL for the Postgres store)
+npm test                  # 75 tests (plus the Postgres store tests when TEST_DATABASE_URL is set)
 npm run adversarial       # prints the table below
 ```
+
+## The site
+
+`/` is the landing page and `/app` is the dashboard, both served by `server.mjs` from `public/`. The landing page is not a mock-up. Its live gate, its run viewer and its tamper check call a public, stateless **playground API** that runs the same `prepareCall`, `evaluatePolicy`, `nextRecord` and `verifyChain` code the runtime uses:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/play/meta` | the policy, the tools and the five scripted agents |
+| `POST /api/play/check` | judge one call: effect, rules matched, canonical form, call hash |
+| `POST /api/play/run` | run a scripted agent through the gate and return its hash-chained log (`approve: true` plays the approver) |
+| `POST /api/play/verify` | re-check a chain a visitor edited and say where it first breaks |
+
+It stores nothing and is rate limited per client (`PLAY_RATE_LIMIT`, default 60 a minute). `test/play.test.mjs` checks that its decisions and log events match a real runtime run for every scenario.
+
+## Deploy
+
+The dashboard is stateful (a simulated world in memory, a timer that expires old approvals, Postgres for runs and accounts), so it needs a long-running Node host. The playground is stateless, so it can run anywhere.
+
+1. **Backend on Render**: create a web service from `render.yaml` (named `agentgate-api`). Set `DATABASE_URL` (a Postgres connection string, for example from Neon) and `SETUP_TOKEN`, then open the service once and create the administrator. `TRUST_PROXY=1` is already set so rate limits and login lockout see the real client address.
+2. **Site on Vercel**: import the repo. `vercel.json` serves `public/`, runs `api/play/*` as Vercel functions, and rewrites every other `/api/*` request to the Render service. If your Render URL is not `https://agentgate-api.onrender.com`, change it in `vercel.json`.
+
+If the backend is asleep or down, the landing page still works, and `/app` shows a "can't reach the server" screen.
 
 ## Accounts and roles
 
@@ -78,4 +100,4 @@ I applied 15 deliberate bugs by hand (for example: remove the same-actor check, 
 
 ## Layout
 
-`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `server.mjs` + `public/` dashboard · `EXPLAIN.md` interview prep.
+`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.

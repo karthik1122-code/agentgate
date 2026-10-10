@@ -10,6 +10,8 @@ import { createWorld, DEFAULT_FILES, TOOLS, prepareCall, ArgError } from './src/
 import { evaluatePolicy } from './src/policy.mjs';
 import { verifyChain } from './src/chain.mjs';
 import { SCENARIOS, planners } from './src/scenarios.mjs';
+import { createPlayground } from './src/play.mjs';
+import { createPlayHttp, clientIp } from './src/play-http.mjs';
 
 const port = Number(process.env.PORT || 4200);
 const publicRoot = new URL('./public/', import.meta.url).pathname;
@@ -23,11 +25,12 @@ const SETUP_TOKEN = process.env.SETUP_TOKEN || '';
 const auth = createAuth({ db: store._pool ? await createPostgresAuthStore(store._pool) : createMemoryAuthStore() });
 
 const MAX_BODY = 8 * 1024;
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 const headers = {
   'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer',
   'content-security-policy': "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
 };
+const play = createPlayHttp(createPlayground(policy));
 const hits = new Map();
 const limited = ip => { const now = Date.now(); const l = (hits.get(ip) || []).filter(t => now - t < 60_000); l.push(now); hits.set(ip, l); return l.length > 240; };
 const send = (res, status, body, extra = {}) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers, ...extra }); res.end(JSON.stringify(body)); };
@@ -63,12 +66,12 @@ async function route(req, res, url) {
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/setup') {
     const body = await readJson(req);
     if (SETUP_TOKEN && body.setupToken !== SETUP_TOKEN) return send(res, 403, { error: 'invalid_setup_token', message: 'the setup token is wrong' });
-    try { await auth.setup(body); const s = await auth.login(body.email, body.password, req.socket.remoteAddress); return send(res, 201, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
+    try { await auth.setup(body); const s = await auth.login(body.email, body.password, clientIp(req)); return send(res, 201, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
     catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/login') {
     const body = await readJson(req);
-    try { const s = await auth.login(body.email, body.password, req.socket.remoteAddress); return send(res, 200, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
+    try { const s = await auth.login(body.email, body.password, clientIp(req)); return send(res, 200, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
     catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/logout') { await auth.logout(token); return send(res, 200, { ok: true }, { 'set-cookie': setCookie(req, '', 0) }); }
@@ -148,7 +151,8 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (url.pathname.startsWith('/api/')) {
-      if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'rate_limited' });
+      if (url.pathname.startsWith('/api/play/')) return play(req, res, url.pathname.slice('/api/play/'.length));
+      if (limited(clientIp(req))) return send(res, 429, { error: 'rate_limited' });
       const handled = await route(req, res, url);
       if (handled === null) send(res, 404, { error: 'not_found' });
       return;
@@ -156,11 +160,12 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') {
       let requested; try { requested = decodeURIComponent(url.pathname); } catch { return send(res, 400, { error: 'bad_path' }); }
       if (requested === '/') requested = '/index.html';
+      else if (requested === '/app') requested = '/app.html';
       const path = normalize(join(publicRoot, requested));
       const type = mime[extname(path)];
       if (!path.startsWith(publicRoot.endsWith(sep) ? publicRoot : publicRoot + sep) || !type) return send(res, 404, { error: 'not_found' });
       let file; try { file = await readFile(path); } catch { return send(res, 404, { error: 'not_found' }); }
-      res.writeHead(200, { 'content-type': type, 'cache-control': requested === '/index.html' ? 'no-cache' : 'public, max-age=300', ...headers });
+      res.writeHead(200, { 'content-type': type, 'cache-control': requested.endsWith('.html') ? 'no-cache' : 'public, max-age=300', ...headers });
       return res.end(req.method === 'HEAD' ? undefined : file);
     }
     send(res, 404, { error: 'not_found' });

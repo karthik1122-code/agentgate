@@ -3,28 +3,180 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentGate: approvals for AI agent actions</title>
-<meta name="description" content="Every action an AI agent takes passes a policy, a human approval when needed, and a tamper-evident log.">
+<title>AgentGate: a gate for AI agent actions</title>
+<meta name="description" content="AgentGate checks every tool call an AI agent makes against a policy, holds risky ones for a person to approve, and writes each step to a log that shows if anyone edits it.">
 <meta name="color-scheme" content="dark light">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%238f7dff'/%3E%3Cpath d='M9 22V14a7 7 0 0114 0v8' fill='none' stroke='white' stroke-width='3'/%3E%3Crect x='12' y='17' width='8' height='7' rx='1.5' fill='white'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='9' y='1' width='14' height='30' rx='4' fill='%23111'/%3E%3Ccircle cx='16' cy='8' r='3.2' fill='%23ff5443'/%3E%3Ccircle cx='16' cy='16' r='3.2' fill='%23ffd21f'/%3E%3Ccircle cx='16' cy='24' r='3.2' fill='%2335d682'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
-<script src="theme.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/landing.css">
+<script src="/theme.js"></script>
 </head>
-<body>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="auth" hidden></div>
-<div id="app" hidden>
-  <aside class="rail">
-    <a class="brand" href="#overview" aria-label="AgentGate home"><span class="mark" aria-hidden="true"></span>AgentGate</a>
-    <button class="search" id="openpal" type="button" aria-label="Open command menu"></button>
-    <nav id="nav" aria-label="Sections"></nav>
-    <div class="railfoot"><div class="sys" id="sys"></div><div class="who" id="who"></div></div>
-  </aside>
-  <div class="col"><header class="topbar" id="topbar"></header><main id="view" tabindex="-1"></main><footer class="statusbar" id="status"></footer></div>
-</div>
-<div id="pal" role="dialog" aria-modal="true" aria-label="Command menu"><div class="pbox"><input id="pin" placeholder="Go to a page or run a command" aria-label="Command" autocomplete="off"><ul id="pls" role="listbox"></ul></div></div>
-<script src="app.js" type="module"></script>
+<body class="landing">
+<a class="skip" href="#gate">Skip to the live gate</a>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="AgentGate home"><span class="mark" aria-hidden="true"></span><span class="word">AgentGate</span></a>
+    <nav class="links" id="links" aria-label="Page sections">
+      <a href="#gate">Gate</a><a href="#runs">Runs</a><a href="#policy">Policy</a><a href="#guarantees">Guarantees</a><a href="#limits">Limits</a>
+    </nav>
+    <div class="nav-r">
+      <button class="btn ghost sm" id="theme" type="button" aria-label="Switch theme"><span class="tx">Theme</span></button>
+      <a class="btn primary sm" href="/app">Open dashboard</a>
+      <button class="btn ghost sm menu" id="menu" type="button" aria-expanded="false" aria-controls="links" aria-label="Menu"><span class="bars" aria-hidden="true"></span></button>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <h1>Every agent action stops at the gate.</h1>
+    <div class="hero-sub">
+      <p class="lede">AgentGate checks each tool call an AI agent makes against a policy you can read. Safe calls run. Risky ones wait for a person. Every step goes into a log that shows if anyone edits it.</p>
+      <div class="cta">
+        <a class="btn primary lg" href="/app">Open the dashboard</a>
+        <a class="btn lg" href="#runs">Watch a run</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="gate" id="gate" data-state="idle" aria-labelledby="gate-h">
+      <div class="gate-top">
+        <h2 id="gate-h">Send a call through the gate</h2>
+        <span class="chip" id="pol-chip">connecting to the policy engine</span>
+      </div>
+      <div class="lane" aria-hidden="true">
+        <div class="node agent"><b>Agent</b><span>proposes</span></div>
+        <div class="rail"></div>
+        <div class="mast"><span class="lamp l-deny"></span><span class="lamp l-hold"></span><span class="lamp l-allow"></span></div>
+        <div class="arm"></div>
+        <div class="node world"><b>World</b><span>simulated</span></div>
+        <div class="token" id="token"><b id="tk-tool">read_file</b><span id="tk-arg">workspace/report.md</span></div>
+      </div>
+      <div class="gate-grid">
+        <div class="col-call">
+          <div class="presets" id="presets" role="group" aria-label="Example calls"></div>
+          <div class="field"><label for="tool">Tool</label><select id="tool"></select></div>
+          <div class="field"><label for="args">Arguments (JSON)</label><textarea id="args" rows="6" spellcheck="false"></textarea></div>
+          <button class="btn primary" id="send" type="button">Send through the gate</button>
+        </div>
+        <div class="col-verdict" aria-live="polite">
+          <div class="verdict" id="verdict">
+            <p class="v-word" id="v-word">Waiting</p>
+            <p class="v-reason" id="v-reason">Pick an example, or write your own call. The answer comes from the same policy engine the dashboard uses.</p>
+            <div class="v-rules" id="v-rules"></div>
+            <div class="v-human" id="v-human" hidden>
+              <p>A person has to decide this one. In the dashboard that is a different, signed-in account. Here you can play the approver.</p>
+              <div class="v-btns"><button class="btn ok sm" id="v-approve" type="button">Approve this call</button><button class="btn no sm" id="v-reject" type="button">Reject</button></div>
+            </div>
+            <dl class="v-facts" id="v-facts" hidden>
+              <div><dt>What would actually run</dt><dd><pre id="v-canon"></pre></dd></div>
+              <div><dt>Call hash. An approval is tied to this.</dt><dd><code id="v-hash"></code></dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</section>
+
+<section class="sec" id="runs" aria-labelledby="runs-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 id="runs-h">A run is a train. Each step is a car.</h2>
+      <p>Pick a scripted agent. The server sends each of its calls through the gate and writes a log. Every record carries the hash of the one before it, so changing any record breaks every coupling after it.</p>
+    </div>
+    <div class="tabs" id="scn-tabs" role="tablist" aria-label="Scripted agents"></div>
+    <div class="runbar">
+      <label class="check"><input type="checkbox" id="auto-approve" checked> A person approves held calls</label>
+      <span class="runmeta mono" id="run-meta"></span>
+    </div>
+    <div class="trainwrap" id="train-wrap"><div class="train-empty">Loading a run…</div></div>
+    <div class="run-grid">
+      <div class="calls">
+        <h3>What the gate decided</h3>
+        <ol class="call-list" id="call-list"></ol>
+      </div>
+      <div class="tamper">
+        <h3>Try to rewrite history</h3>
+        <p class="t-help">Click a car to open its record. Change anything and press Verify. The server re-hashes the chain and says where it breaks.</p>
+        <div class="field"><label for="rec" id="rec-label">Record</label><textarea id="rec" rows="8" spellcheck="false" disabled></textarea></div>
+        <div class="t-btns"><button class="btn primary sm" id="verify" type="button" disabled>Verify the chain</button><button class="btn sm" id="del" type="button" disabled>Delete this record</button><button class="btn sm" id="restore" type="button" disabled>Restore</button></div>
+        <div class="seal" id="seal" role="status" aria-live="polite"><span class="tag t-valid" id="seal-tag">valid</span><span id="seal-text">Click a car to begin.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt" id="policy" aria-labelledby="policy-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 id="policy-h">The policy is a file you can read.</h2>
+      <p>Plain JSON, so it can be reviewed, diffed and versioned. When several rules match, deny beats approve beats allow. When none match, the call is denied.</p>
+    </div>
+    <div class="ptable-wrap"><table class="ptable"><thead><tr><th>Rule</th><th>Tool</th><th>When</th><th>Effect</th><th>Why</th></tr></thead><tbody id="rules"></tbody></table></div>
+    <p class="pfoot mono" id="pfoot"></p>
+  </div>
+</section>
+
+<section class="sec" id="guarantees" aria-labelledby="g-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 id="g-h">Six promises, each one tested.</h2>
+    </div>
+    <ul class="gl">
+      <li><h3>Unknown means no.</h3><p>A call that matches no rule is denied. Unknown tools and unexpected arguments are rejected before the policy even runs.</p><code>test/policy.test.mjs · test/tools.test.mjs</code></li>
+      <li><h3>The policy judges what will run.</h3><p>Every tool turns its arguments into one canonical form first. Paths like <code>workspace/%2e%2e/secrets</code> are rejected instead of being judged as harmless text.</p><code>test/tools.test.mjs · test/adversarial.test.mjs</code></li>
+      <li><h3>An approval covers one call.</h3><p>Approving means approving a hash. If the call changed after the person looked, the approval is refused and nothing runs.</p><code>test/runtime.test.mjs</code></li>
+      <li><h3>Two people, and a clock.</h3><p>The account that started a run cannot approve its own call. Approvals expire after 15 minutes, and the policy is checked again at the moment a call would run.</p><code>test/runtime.test.mjs</code></li>
+      <li><h3>A crash does not repeat a refund.</h3><p>Run state is rebuilt from the log. Restart the server mid-run and it continues once, not twice. The Postgres store is tested against the same contract.</p><code>test/runtime.test.mjs · test/store-contract.test.mjs</code></li>
+      <li><h3>The log shows tampering.</h3><p>Edits, deletions and reordering break the hash chain, as you can check above with the real verifier.</p><code>test/runtime.test.mjs · test/play.test.mjs</code></li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec alt" id="limits" aria-labelledby="l-h">
+  <div class="wrap lim-grid">
+    <div class="sec-head">
+      <h2 id="l-h">What it does not do.</h2>
+      <p>Stated here so nobody finds out later.</p>
+    </div>
+    <ul class="ll">
+      <li><b>The tools are simulated.</b> No email is sent, no money moves, no command runs. The point is the gate, not the tools.</li>
+      <li><b>The agents are scripts.</b> Five scripted scenarios exercise the gate. Plugging in a model-driven agent means writing a planner with the same small interface.</li>
+      <li><b>The chain detects, it does not prevent.</b> Someone who can write to the database and recompute every hash after an edit can forge a history. Dropping the newest records is only visible if you kept the head hash somewhere else.</li>
+      <li><b>It is not your authorization layer.</b> It decides whether an agent may call a tool. It does not replace permissions in the systems those tools talk to.</li>
+      <li><b>Not load-tested or audited.</b> Built and tested as a portfolio project by one person.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="band" aria-labelledby="b-h">
+  <div class="tape" aria-hidden="true"></div>
+  <div class="wrap band-in">
+    <h2 id="b-h">Run it yourself.</h2>
+    <div class="code"><pre id="run-code">git clone https://github.com/karthik1122-code/agentgate
+cd agentgate &amp;&amp; npm ci
+AUTH=off npm start</pre><button class="btn sm" id="copy-code" type="button">Copy</button></div>
+    <p class="fine">AUTH=off is a local demo mode with no sign-in. A deployed copy uses accounts and a Postgres database.</p>
+    <a class="btn primary lg" href="/app">Open the dashboard</a>
+  </div>
+  <div class="tape" aria-hidden="true"></div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-brand"><a class="brand" href="/" aria-label="AgentGate home"><span class="mark" aria-hidden="true"></span><span class="word">AgentGate</span></a><p>Approvals and an audit log for AI agent actions.</p></div>
+    <nav class="foot-col" aria-label="Product"><b>Product</b><a href="/app">Dashboard</a><a href="#gate">Live gate</a><a href="#runs">Runs</a><a href="#policy">Policy</a></nav>
+    <nav class="foot-col" aria-label="Project"><b>Project</b><a href="https://github.com/karthik1122-code/agentgate">Source on GitHub</a><a href="#guarantees">Guarantees</a><a href="#limits">Limits</a></nav>
+    <div class="foot-col"><b>Built by</b><span>Karthik Uppari</span><a href="https://github.com/karthik1122-code">github.com/karthik1122-code</a></div>
+  </div>
+</footer>
+<script src="/landing.js" type="module"></script>
 </body>
 </html>

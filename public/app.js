@@ -1,3 +1,4 @@
+import { renderTrain } from '/train.js';
 const $ = id => document.getElementById(id);
 // All text goes in through textContent / text nodes. Tool arguments are attacker-influenced, so nothing is ever parsed as HTML.
 const el = (tag, props = {}, ...kids) => {
@@ -59,10 +60,16 @@ function authScreen() {
       await boot();
     } catch (x) { err.textContent = x.message; }
   });
-  box.append(el('div', { class: 'authcard' }, el('span', { class: 'mark' }),
+  box.append(el('div', { class: 'authcard' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
     el('h1', {}, setup ? 'Set up AgentGate' : 'Sign in to AgentGate'),
     el('p', { class: 'sub' }, setup ? 'Create the first administrator. They can add approvers and viewers afterwards.' : 'Approvals are tied to your account and recorded in the audit log.'), form));
   setTimeout(() => $(setup ? 'name' : 'email').focus(), 0);
+}
+
+function offlineScreen() {
+  $('app').hidden = true; const box = $('auth'); box.hidden = false; box.replaceChildren(el('div', { class: 'authcard' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
+    el('h1', {}, 'Can’t reach the server'), el('p', { class: 'sub' }, 'The dashboard needs its backend, and it did not answer. If it runs on a free host it may be waking up, which can take a minute.'),
+    el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, 'Try again'), el('a', { class: 'btn', href: '/' }, 'Back to the site'))));
 }
 
 /* ---------- shell ---------- */
@@ -209,7 +216,7 @@ async function viewRuns() {
   if (!selectedRun || !runs.some(r => r.id === selectedRun)) selectedRun = runs[0].id;
   for (const r of runs) list.append(el('button', { class: 'item', type: 'button', 'aria-current': r.id === selectedRun, onclick: () => { selectedRun = r.id; viewRuns(); } }, el('div', { class: 'r1' }, el('b', {}, r.planner), tag(r.status)), el('small', {}, `${r.calls} calls · ${r.denials} denied · ${ago(r.created_at)}`)));
   const v = await api(`/api/runs/${selectedRun}`);
-  const chain = el('div', { class: 'chain', tabindex: 0, role: 'group', 'aria-label': 'Hash chain. Each block holds the hash of the one before it.' }, v.events.map(e => el('div', { class: 'blk', title: `${e.hash}\nprev ${e.prev}` }, el('span', { class: 's' }, `#${e.seq}`), el('b', {}, e.type.replace('call_', '').replace('approval_', 'appr. ')), el('code', {}, e.hash.slice(0, 8)))));
+  const chain = renderTrain(v.events, { verdict: v.integrity });
   const tl = el('ol', { class: 'tl' });
   for (const c of v.state.calls) {
     const out = c.outcome ? (c.outcome.result || c.outcome.reason || c.outcome.error || c.outcome.status) : '';
@@ -320,7 +327,7 @@ $('openpal').addEventListener('click', palOpen);
 async function boot() {
   clearInterval(timer); clearInterval(tick);
   me = await api('/api/auth/me').catch(() => null);
-  if (!me) return toast('Cannot reach the server', true);
+  if (!me) return offlineScreen();
   if (!me.user) return authScreen();
   health = await api('/api/health').catch(() => null);
   scenarios = await api('/api/scenarios').catch(() => []);
