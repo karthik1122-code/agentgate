@@ -6,6 +6,7 @@ const el = (tag, props = {}, ...kids) => {
   for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k.nodeType ? k : document.createTextNode(String(k)));
   return n;
 };
+const live = nodes => nodes.flat(Infinity).filter(n => n !== null && n !== undefined && n !== false);
 const show = (...nodes) => $('view').replaceChildren(...nodes.flat(Infinity).filter(n => n !== null && n !== undefined && n !== false));
 const toast = (msg, bad) => { const t = el('div', { class: `toast${bad ? ' bad' : ''}` }, msg); $('toast').append(t); setTimeout(() => t.remove(), 3500); };
 class ApiError extends Error { constructor(m, status, code) { super(m); this.status = status; this.code = code; } }
@@ -61,9 +62,9 @@ function shell() {
     if (role && !can(role)) continue;
     nav.append(el('a', { href: `#${id}`, 'aria-current': view === id ? 'page' : false }, label, id === 'approvals' && pending.length ? el('span', { class: 'pill' }, pending.length) : null));
   }
-  const who = $('who'); who.replaceChildren(
+  const who = $('who'); who.replaceChildren(...live([
     el('div', {}, el('b', {}, me.user.name), el('span', {}, me.authEnabled ? `${me.user.role} · ${me.user.email}` : 'demo mode, no sign-in')),
-    me.authEnabled ? el('button', { class: 'btn', type: 'button', onclick: async () => { await api('/api/auth/logout', { method: 'POST', body: {} }); me = null; await boot(); } }, 'Sign out') : null);
+    me.authEnabled ? el('button', { class: 'btn', type: 'button', onclick: async () => { await api('/api/auth/logout', { method: 'POST', body: {} }); me = null; await boot(); } }, 'Sign out') : null]));
 }
 const head = (title, sub, ...right) => el('div', { class: 'head' }, el('div', {}, el('h1', {}, title), sub ? el('p', {}, sub) : null), el('div', {}, right));
 const demoBanner = () => (me.authEnabled ? null : el('div', { class: 'banner', role: 'note' }, 'Demo mode: there are no accounts, so anyone who can open this page can approve. Run with AUTH on (the default) for real sign-in.'));
@@ -149,7 +150,7 @@ async function viewSandbox() {
         el('div', { class: 'field' }, el('label', { for: 'tool' }, 'Tool'), tool), el('div', { class: 'field' }, el('label', { for: 'args' }, 'Arguments (JSON)'), args),
         el('button', { class: 'btn primary', type: 'button', disabled: !can('approver'), onclick: async () => {
           out.replaceChildren(); let a; try { a = JSON.parse(args.value || '{}'); } catch { out.append(el('p', { class: 'err' }, 'Arguments are not valid JSON.')); return; }
-          try { const r = await api('/api/policy/check', { method: 'POST', body: { tool: tool.value, args: a } }); out.append(el('p', {}, tag(r.effect), ` ${r.stage === 'validation' ? 'Rejected before policy: ' : ''}${r.reason}`), r.canonical ? el('pre', { class: 'args' }, `what would actually run\n${JSON.stringify(r.canonical, null, 2)}`) : null); } catch (e) { out.append(el('p', { class: 'err' }, e.message)); }
+          try { const r = await api('/api/policy/check', { method: 'POST', body: { tool: tool.value, args: a } }); out.append(...live([el('p', {}, tag(r.effect), ` ${r.stage === 'validation' ? 'Rejected before policy: ' : ''}${r.reason}`), r.canonical ? el('pre', { class: 'args' }, `what would actually run\n${JSON.stringify(r.canonical, null, 2)}`) : null])); } catch (e) { out.append(el('p', { class: 'err' }, e.message)); }
         } }, 'Check'), out),
       el('div', { class: 'card' }, el('h2', { class: 'h18' }, 'Simulated world'), part('Emails sent', w.outbox, m => `to ${m.to.join(', ')}: ${m.subject}`), part('Refunds issued', w.ledger, r => `${r.payment_id} ${money(r.amount)}`), part('Commands run', w.commands, c => String(c)))));
 }
