@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "default": "deny",
+  "limits": { "maxCalls": 25, "maxDenials": 3, "maxArgsBytes": 8192, "approvalTtlSeconds": 900, "requireDifferentApprover": true },
+  "rules": [
+    { "id": "read-workspace", "tool": "read_file", "effect": "allow", "when": { "args.path": { "startsWith": "workspace/" } }, "reason": "Reading workspace files is allowed." },
+    { "id": "write-workspace", "tool": "write_file", "effect": "allow", "when": { "args.path": { "startsWith": "workspace/" }, "facts.bytes": { "lte": 20000 } }, "reason": "Writing inside the workspace is allowed." },
+    { "id": "write-config", "tool": "write_file", "effect": "approve", "when": { "args.path": { "startsWith": "config/" } }, "reason": "Changing configuration needs a human to approve it." },
+    { "id": "deny-dotfiles", "tool": ["read_file", "write_file"], "effect": "deny", "when": { "facts.is_dotfile": { "eq": true } }, "reason": "Dotfiles such as .env hold credentials and are never touched." },
+    { "id": "deny-secret-content", "tool": ["write_file", "send_email"], "effect": "deny", "when": { "facts.contains_secret": { "eq": true } }, "reason": "The content looks like a credential or private key." },
+
+    { "id": "email-internal", "tool": "send_email", "effect": "allow", "when": { "facts.external_recipients": { "eq": 0 } }, "reason": "Email to company addresses only is allowed." },
+    { "id": "email-external", "tool": "send_email", "effect": "approve", "when": { "facts.external_recipients": { "gt": 0 } }, "reason": "Sending email outside the company needs a human to approve it." },
+
+    { "id": "refund-small", "tool": "refund_payment", "effect": "allow", "when": { "args.amount": { "lte": 100000 }, "projected.amount": { "lte": 200000 } }, "reason": "Refunds up to ₹1,000, within a ₹2,000 per-run total, are allowed." },
+    { "id": "refund-medium", "tool": "refund_payment", "effect": "approve", "when": { "args.amount": { "gt": 100000 } }, "reason": "A refund above ₹1,000 needs a human to approve it." },
+    { "id": "refund-cumulative", "tool": "refund_payment", "effect": "approve", "when": { "projected.amount": { "gt": 200000 } }, "reason": "This run's refunds now total more than ₹2,000, so each further refund needs a human." },
+    { "id": "refund-large", "tool": "refund_payment", "effect": "deny", "when": { "args.amount": { "gt": 1000000 } }, "reason": "A single refund above ₹10,000 is never allowed from an agent." },
+    { "id": "refund-budget", "tool": "refund_payment", "effect": "deny", "when": { "projected.amount": { "gt": 2000000 } }, "reason": "This run has reached its ₹20,000 refund budget." },
+
+    { "id": "command-allowlist", "tool": "run_command", "effect": "allow", "when": { "args.command": { "in": ["pwd", "ls", "git status"] }, "facts.has_shell_metachar": { "eq": false } }, "reason": "Read-only commands on the allowlist are allowed." },
+    { "id": "command-tests", "tool": "run_command", "effect": "approve", "when": { "args.command": { "eq": "npm test" } }, "reason": "Running the test suite needs a human to approve it." },
+    { "id": "deny-shell-metachar", "tool": "run_command", "effect": "deny", "when": { "facts.has_shell_metachar": { "eq": true } }, "reason": "Shell metacharacters (; & | ` $ < > and similar) are never allowed." }
+  ]
+}

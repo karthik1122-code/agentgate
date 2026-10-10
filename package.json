@@ -1,0 +1,15 @@
+{
+  "name": "agentgate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A policy gate and durable approval runtime for AI agent tool calls.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "adversarial": "node support/adversarial-report.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

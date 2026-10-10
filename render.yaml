@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: agentgate
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm test
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_URL
+        sync: false
+      # Set a token before exposing this publicly. Without it, approvals are open (demo mode).
+      - key: APPROVER_TOKEN
+        sync: false
+      - key: APPROVER_NAME
+        value: human:approver

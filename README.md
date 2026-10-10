@@ -1,0 +1,68 @@
+# AgentGate
+
+A policy gate and approval runtime for AI agent tool calls. An agent proposes a call. AgentGate canonicalises it, judges it against a JSON policy (default **deny**), asks a human when the policy says so, executes it at most once, and records every step in a hash-chained log.
+
+The agents in this repo are **scripted** (`src/scenarios.mjs`), not language models. The product is the gate. A model-driven planner would implement the same `next({ input, history })` interface; that is not built yet. The world (files, outbox, refund ledger, commands) is simulated: nothing sends email, moves money or runs a shell.
+
+## Run it
+
+```bash
+npm install
+npm start                 # http://localhost:4200, in-memory store
+DATABASE_URL=postgres://... npm start   # durable runs in Postgres
+npm test                  # 56 tests (61 with TEST_DATABASE_URL for the Postgres store)
+npm run adversarial       # prints the table below
+```
+
+Set `APPROVER_TOKEN` before exposing it anywhere public. With it, decisions need an `x-approver-token` header and the server, not the browser, names the approver. Without it the browser names the approver, which is a local demo only.
+
+## What it guarantees (and the test for each)
+
+| Property | How |
+|---|---|
+| The policy judges exactly what runs | Arguments are validated and canonicalised first (paths resolved, URL-decoded, case folded); the canonical form is what is hashed, judged and executed. |
+| Default deny | A call no rule matches is denied. |
+| Approval is for one specific call | The approver submits the call hash; a different hash is refused (409). |
+| Four eyes | The approver cannot be the actor that proposed the call (403). |
+| Approvals expire | 15 minutes by default; an expired call is never executed. |
+| Policy is re-checked at execution | An approved call is judged again before it runs. |
+| Effectively once | Execution uses an idempotency key; a retry after a crash does not repeat the side effect. |
+| Slicing is caught | Refund rules look at the run's cumulative total, not only the single call. |
+| Runaway agents stop | Call cap per run and a denial circuit breaker. |
+| Tool output is data | Output from a tool is never interpreted as policy or instructions. |
+| Tamper-evident history | Runs are folded from an append-only, hash-chained event log; `verifyChain` checks it. Optimistic concurrency (`expectedSeq`) stops two writers forking a run. |
+
+## Adversarial suite (measured)
+
+56 hand-written cases in `support/adversarial-cases.mjs`: 44 attacks and 12 legitimate calls. Result of `npm run adversarial`:
+
+| Category | Cases | Denied | Held for a human | Executed |
+|---|---|---|---|---|
+| paths | 13 | 12 | 1 | 0 |
+| shell | 8 | 7 | 1 | 0 |
+| email | 7 | 3 | 4 | 0 |
+| money | 8 | 7 | 1 | 0 |
+| tools | 8 | 8 | 0 | 0 |
+| **All attacks** | **44** | **37** | **7** | **0** |
+
+Legitimate calls: 12. Allowed: 11. Held for a human by design: 1. **Wrongly denied: 0.** Side effects from attacks: 0. The false-block rate is reported next to the block rate on purpose, since a gate that blocks everything scores perfectly on attacks.
+
+I wrote both the policy and the attacks, so this shows the gate does what the policy says against the cases I thought of. It is not a claim about attacks I did not think of.
+
+## Test strength
+
+I applied 15 deliberate bugs by hand (for example: remove the same-actor check, skip the hash comparison, skip re-checking policy at execution, ignore the cumulative total) and ran `node --test` after each. All 15 made at least one test fail. I did not keep the mutation script, so treat this as a result I observed, not one you can rerun with a command.
+
+## Honest limits
+
+- Secret detection is regex-based. It catches common key and private-key shapes, not arbitrary secrets.
+- The ReDoS guard on patterns is a heuristic.
+- An email to an internal address can still carry sensitive content; the content check is the same regexes.
+- Without `APPROVER_TOKEN`, the approver name is self-declared. With it, there is one shared token, not per-user identity.
+- Scripted planners only. No LLM planner, so nothing here measures prompt-injection resistance of a real model.
+- Truncating the newest records of a log is not detectable without an externally stored head hash. The chain detects edits and deletions in the middle.
+- The tool set is five simulated tools. Real tools need their own validators.
+
+## Layout
+
+`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `server.mjs` + `public/` dashboard · `EXPLAIN.md` interview prep.
