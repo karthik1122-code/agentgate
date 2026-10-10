@@ -1,0 +1,227 @@
+<title>AgentGate</title>
+<meta name="description" content="Every action an AI agent takes passes a policy, a human approval when needed, and a tamper-evident log.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07080b;--bg2:#0d0f14;--fg:#eceef4;--dim:#a2a8b8;--line:#1f232d;--acc:#9a8bff;--accfg:#0b0a14;--allow:#3ddc97;--hold:#f5b544;--deny:#ff6b63;--card:#0d0f14;--mono:'Geist Mono',ui-monospace,Menlo,monospace;--sans:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;color-scheme:dark}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){--bg:#f7f7fa;--bg2:#ffffff;--fg:#14151c;--dim:#565c70;--line:#dedfe8;--acc:#5b45e6;--accfg:#ffffff;--allow:#0f8a5a;--hold:#a96a00;--deny:#c93a32;--card:#ffffff;color-scheme:light}}
+:root[data-theme=light]{--bg:#f7f7fa;--bg2:#ffffff;--fg:#14151c;--dim:#565c70;--line:#dedfe8;--acc:#5b45e6;--accfg:#ffffff;--allow:#0f8a5a;--hold:#a96a00;--deny:#c93a32;--card:#ffffff;color-scheme:light}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 17px/1.55 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:6px}
+.wrap{max-width:1160px;margin:0 auto;padding-inline:20px}
+.mono{font-family:var(--mono);font-size:13px}
+/* nav */
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:20px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.01em}
+.mark{width:26px;height:26px;border-radius:8px;background:var(--acc);display:grid;place-items:center}
+.mark svg{width:16px;height:16px}
+nav .links{margin-left:auto;display:flex;gap:4px;align-items:center}
+nav .links a{padding:8px 12px;border-radius:8px;color:var(--dim);font-size:15px}nav .links a:hover{color:var(--fg)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 20px;border-radius:10px;font-weight:600;border:1px solid var(--line);background:var(--card);transition:transform .15s,background .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn.pri{background:var(--acc);color:var(--accfg);border-color:transparent}
+@media(max-width:720px){nav .links a:not(.btn){display:none}}
+/* hero */
+.hero{padding-block:72px 40px;position:relative;overflow-x:clip}
+.hero::before{content:'';position:absolute;inset:-10% -10% auto auto;width:70%;height:90%;background:radial-gradient(closest-side,color-mix(in srgb,var(--acc) 26%,transparent),transparent);pointer-events:none;z-index:-1}
+.hg{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:48px;align-items:center}
+@media(max-width:900px){.hg{grid-template-columns:1fr}}
+h1{margin:0 0 22px;font-size:clamp(38px,6vw,68px);line-height:1.02;letter-spacing:-.04em;font-weight:700;text-wrap:balance}
+.sub{color:var(--dim);font-size:clamp(17px,1.6vw,20px);max-width:52ch;margin:0 0 30px}
+.cta{display:flex;flex-wrap:wrap;gap:12px}
+.fine{margin:18px 0 0;color:var(--dim);font-size:14px}
+/* gate panel */
+.gate{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;min-width:0;box-shadow:0 30px 80px -30px rgba(0,0,0,.6)}
+.gate h2{font-size:15px;margin:0 0 4px;font-weight:600}
+.gate .hint{margin:0 0 14px;color:var(--dim);font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.chips button{border:1px solid var(--line);background:transparent;border-radius:999px;min-height:40px;padding:0 14px;font-size:14px;transition:background .15s,border-color .15s}
+.chips button:hover{border-color:var(--acc)}.chips button[aria-pressed=true]{background:var(--acc);color:var(--accfg);border-color:transparent}
+.pane{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:14px;margin-bottom:12px;min-width:0}
+.pane .t{display:block;color:var(--dim);margin-bottom:6px}
+.pane pre{margin:0;font:500 13px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+.verdict{display:flex;gap:14px;align-items:center;border-radius:12px;padding:14px;border:1px solid var(--line)}
+.stamp{flex:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:15px;letter-spacing:-.01em}
+.v-allow .stamp{background:var(--allow);color:#04140d}.v-hold .stamp{background:var(--hold);color:#1b1200}.v-deny .stamp{background:var(--deny);color:#1a0505}
+.v-allow{border-color:color-mix(in srgb,var(--allow) 50%,var(--line))}.v-hold{border-color:color-mix(in srgb,var(--hold) 50%,var(--line))}.v-deny{border-color:color-mix(in srgb,var(--deny) 50%,var(--line))}
+.verdict p{margin:0;font-size:15px;line-height:1.4}.verdict small{display:block;color:var(--dim);margin-top:2px}
+/* sections */
+section{padding-block:84px}
+h2.s{margin:0 0 14px;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:700;max-width:20ch;text-wrap:balance}
+.lead{color:var(--dim);max-width:60ch;margin:0 0 44px}
+.proof{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--card)}
+.proof div{padding:26px 24px;border-right:1px solid var(--line);min-width:0}.proof div:last-child{border-right:0}
+.proof b{display:block;font-size:clamp(34px,4vw,48px);letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+.proof span{display:block;color:var(--dim);font-size:15px;margin-top:8px}
+.catch{color:var(--dim);font-size:14px;max-width:80ch;margin:14px 0 0}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;counter-reset:s}
+@media(max-width:980px){.steps{grid-template-columns:1fr 1fr}}@media(max-width:560px){.steps{grid-template-columns:1fr}}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:14px;padding:18px;background:var(--card);position:relative;min-width:0}
+.steps li::before{content:counter(s);font:500 13px var(--mono);color:var(--acc);display:block;margin-bottom:12px}
+.steps h3{margin:0 0 6px;font-size:18px;letter-spacing:-.02em}.steps p{margin:0;color:var(--dim);font-size:15px;line-height:1.45}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:48px;align-items:start}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+.gar{display:grid;gap:30px}.gar h3{margin:0 0 6px;font-size:22px;letter-spacing:-.025em}.gar p{margin:0;color:var(--dim)}
+/* chain */
+.chain{display:flex;gap:0;overflow-x:auto;padding:6px 2px 16px}
+.blk{flex:none;width:136px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px;position:relative;transition:border-color .3s,background .3s}
+.blk+.blk{margin-left:22px}.blk+.blk::before{content:'';position:absolute;left:-23px;top:50%;width:22px;height:2px;background:var(--line);transition:background .3s}
+.blk b{display:block;font-size:14px}.blk span{display:block;font:500 12px var(--mono);color:var(--dim);margin-top:4px;word-break:break-all}
+.blk.bad{border-color:var(--deny);background:color-mix(in srgb,var(--deny) 12%,var(--card))}.blk.bad::before{background:var(--deny)}
+.blk.after{border-color:color-mix(in srgb,var(--deny) 45%,var(--line))}
+.chrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
+.res{margin:14px 0 0;font-weight:600}.res.ok{color:var(--allow)}.res.no{color:var(--deny)}
+table{width:100%;border-collapse:collapse;font-size:15px;min-width:560px}
+th,td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--dim);font-size:14px}td:first-child{font-weight:600;white-space:nowrap}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.tw tr:last-child td{border-bottom:0}
+.lim{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.lim div{border-left:2px solid var(--line);padding-left:18px}.lim h3{margin:0 0 6px;font-size:17px}.lim p{margin:0;color:var(--dim);font-size:15px}
+.end{border:1px solid var(--line);border-radius:22px;padding:clamp(28px,5vw,56px);background:var(--card);text-align:left}
+footer{padding-block:34px 56px;color:var(--dim);font-size:14px;border-top:1px solid var(--line)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<nav><div class="wrap"><a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M7 11V8a5 5 0 0110 0v3"/><rect x="6" y="11" width="12" height="9" rx="2" fill="#fff" stroke="none"/></svg></span>AgentGate</a>
+<div class="links"><a href="#how">How it works</a><a href="#proof">Evidence</a><a href="#log">Tamper test</a><a href="#limits">Limits</a><a class="btn pri" href="https://claude.ai/artifact/MHaPqxPmiDLkYhjmQFrcsJ" target="_blank" rel="noopener">Open the live demo</a></div></div></nav>
+
+<header class="hero" id="top"><div class="wrap hg">
+<div>
+<h1>Let AI agents act. Keep a person in charge of what matters.</h1>
+<p class="sub">AgentGate sits between an agent and its tools. Every call is checked against your policy, held for a person when it should be, and written to a log that shows when anyone edits history.</p>
+<div class="cta"><a class="btn pri" href="https://claude.ai/artifact/MHaPqxPmiDLkYhjmQFrcsJ" target="_blank" rel="noopener">Open the live demo</a><a class="btn" href="#log">Try to tamper with the log</a></div>
+<p class="fine">The demo runs the real policy engine in your browser. Agents are scripted and tools are simulated, so nothing real can happen.</p>
+</div>
+<div class="gate" aria-labelledby="g-h">
+<h2 id="g-h">Send a tool call to the gate</h2>
+<p class="hint">This is the real engine, not a mock-up. Pick a call an agent might make.</p>
+<div class="chips" id="chips" role="group" aria-label="Example tool calls"></div>
+<div class="pane"><span class="t mono">What the agent sent</span><pre id="raw"></pre></div>
+<div class="pane"><span class="t mono" id="canT">What the gate will judge</span><pre id="can"></pre></div>
+<div class="verdict" id="vd" aria-live="polite"><span class="stamp" id="stamp"></span><p id="why"></p></div>
+</div></header>
+
+<section id="proof" style="padding-block:40px 20px"><div class="wrap">
+<div class="proof">
+<div><b>44 / 44</b><span>attack calls never ran: 37 denied, 7 held for a human</span></div>
+<div><b>0 of 12</b><span>legitimate calls wrongly denied</span></div>
+<div><b>70</b><span>automated tests, including the hash chain and approvals</span></div>
+<div><b>15 / 15</b><span>deliberately injected bugs caught by at least one test</span></div>
+</div>
+<p class="catch">The catch: I wrote the policy and the attacks, with scripted agents and simulated tools. This shows the design holds against the cases I thought of, not how it fares against a real model in the wild.</p>
+</div></section>
+
+<section id="how"><div class="wrap">
+<h2 class="s">What happens to one tool call</h2>
+<p class="lead">The same five steps, every time, for every tool.</p>
+<ol class="steps">
+<li><h3>Agent proposes</h3><p>A tool name and arguments. Nothing runs yet.</p></li>
+<li><h3>Gate cleans it up</h3><p>Paths and strings are decoded and checked first, so the policy judges what would really run.</p></li>
+<li><h3>Policy decides</h3><p>Allow, hold for approval, or deny. Anything no rule matches is denied.</p></li>
+<li><h3>A person approves</h3><p>For held calls: a different person, for that exact call, before it expires.</p></li>
+<li><h3>It runs once, and is sealed</h3><p>Policy is checked again at the moment of execution. Every step goes into the log.</p></li>
+</ol></div></section>
+
+<section><div class="wrap two">
+<div><h2 class="s">Three promises you can check</h2><p class="lead" style="margin:0">Each one is a test in the repo, not a sentence in a brochure.</p></div>
+<div class="gar">
+<div><h3>The policy sees what will actually run</h3><p>An encoded or sneaky path is decoded or refused before any rule is applied, so a disguised request cannot slip past a rule that only looks at plain text.</p></div>
+<div><h3>An approval is for one exact call</h3><p>Your yes is tied to a hash of that call. Change a single character and the approval no longer applies, and the person who approves cannot be the agent's own requester.</p></div>
+<div><h3>History cannot be edited quietly</h3><p>Each record includes the hash of the one before it. Change, delete or reorder a record and verification fails at the exact spot. Try it below.</p></div>
+</div></div></section>
+
+<section id="log"><div class="wrap">
+<h2 class="s">Edit the log. See what breaks.</h2>
+<p class="lead">This is a real chain of five records built with AgentGate's own code. Change the approved amount in record 4 and see where verification fails.</p>
+<div class="chain" id="chain" role="list"></div>
+<div class="chrow"><button class="btn" id="tam">Change the amount in record 4</button><button class="btn" id="rst">Restore</button></div>
+<p class="res" id="res" role="status"></p>
+</div></section>
+
+<section><div class="wrap">
+<h2 class="s">Why not just tell the agent to behave?</h2>
+<p class="lead">Instructions in a prompt are advice. A gate is enforcement outside the model.</p>
+<div class="tw"><table><thead><tr><th></th><th>Rules written in the prompt</th><th>AgentGate</th></tr></thead><tbody>
+<tr><td>Who enforces it</td><td>The model, which can be talked out of it</td><td>Code outside the model, which cannot</td></tr>
+<tr><td>Unlisted actions</td><td>Whatever the model decides</td><td>Denied by default</td></tr>
+<tr><td>Risky actions</td><td>Maybe asks, maybe does not</td><td>Held until a different person approves that exact call</td></tr>
+<tr><td>Proof afterwards</td><td>Chat transcript</td><td>Hash-chained log that shows edits</td></tr>
+</tbody></table></div></div></section>
+
+<section id="limits"><div class="wrap">
+<h2 class="s">What this is, and is not, yet</h2>
+<p class="lead">Stated plainly, so nobody finds out the hard way.</p>
+<div class="lim">
+<div><h3>Scripted agents</h3><p>No language model is connected, so nothing here measures how a real model resists prompt injection.</p></div>
+<div><h3>Simulated tools</h3><p>Email, refunds and commands are pretend. The gate and the log are real.</p></div>
+<div><h3>Not hosted yet</h3><p>Accounts, roles and the Postgres store are built and tested, but not deployed. The demo link above runs in your browser instead.</p></div>
+</div></div></section>
+
+<section style="padding-top:20px"><div class="wrap"><div class="end">
+<h2 class="s" style="max-width:22ch">See a held call for yourself.</h2>
+<p class="lead" style="margin-bottom:26px">Start the support agent, approve its large refund, then read the log it leaves behind. It takes about a minute.</p>
+<div class="cta"><a class="btn pri" href="https://claude.ai/artifact/MHaPqxPmiDLkYhjmQFrcsJ" target="_blank" rel="noopener">Open the live demo</a><a class="btn" href="https://github.com/karthik1122-code" target="_blank" rel="noopener">Source on GitHub</a></div>
+</div></div></section>
+<footer><div class="wrap">AgentGate, built by Karthik Uppari · Hyderabad · upparikarthik505@gmail.com</div></footer>
+
+<script>
+(() => {
+const M = {};
+/*ENGINE*/
+const { prepareCall, ArgError } = M.tools, { evaluatePolicy } = M.policy, { nextRecord, verifyChain, callHash } = M.chain;
+const POLICY = /*POLICY*/;
+const $ = id => document.getElementById(id);
+const PRE = [
+ ['Read a report', 'read_file', { path: 'workspace/report.md' }],
+ ['Refund ₹5,000', 'refund_payment', { payment_id: 'pay_EF56GH78', amount: 500000, currency: 'INR' }],
+ ['Email a stranger', 'send_email', { to: ['founder@gmail.com'], subject: 'Q3 numbers', body: 'Attached.' }],
+ ['Shell trick', 'run_command', { command: 'ls; cat .env' }],
+ ['Path trick', 'read_file', { path: 'workspace/../.env' }],
+ ['Leak a key', 'write_file', { path: 'workspace/notes.md', content: 'key AKIAIOSFODNN7EXAMPLE' }],
+];
+const mk = (t, p, ...k) => { const n = document.createElement(t); Object.assign(n, p); n.append(...k); return n; };
+function judge(i) {
+  const [, tool, args] = PRE[i];
+  $('raw').textContent = tool + '\n' + JSON.stringify(args, null, 2);
+  let cls, label, why, sub, canon;
+  try {
+    const c = prepareCall(tool, args);
+    const d = evaluatePolicy(POLICY, c.tool, { args: c.args, facts: c.facts, run: { calls: 0, denials: 0 }, projected: Object.fromEntries(Object.entries(c.args).filter(([, v]) => typeof v === 'number')) });
+    canon = JSON.stringify({ args: c.args, facts: c.facts }, null, 2) + '\ncall hash ' + callHash(c.tool, c.args).slice(0, 16);
+    cls = { allow: 'v-allow', approve: 'v-hold', deny: 'v-deny' }[d.effect]; label = { allow: 'Allowed', approve: 'Held for a person', deny: 'Denied' }[d.effect];
+    why = d.reason; sub = d.rules.length ? 'Rule: ' + d.rules.map(r => r.id).join(', ') : 'No rule matched, so the default is deny.';
+  } catch (e) {
+    if (!(e instanceof ArgError)) throw e;
+    canon = 'Refused before any rule ran.'; cls = 'v-deny'; label = 'Refused'; why = e.message[0].toUpperCase() + e.message.slice(1) + '.'; sub = 'The gate does not guess what a malformed call meant.';
+  }
+  $('can').textContent = canon;
+  const v = $('vd'); v.className = 'verdict ' + cls; $('stamp').textContent = label; $('why').replaceChildren(why, mk('small', {}, sub));
+  [...$('chips').children].forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
+}
+PRE.forEach((p, i) => $('chips').append(mk('button', { type: 'button', onclick: () => judge(i) }, p[0])));
+judge(1);
+/* tamper demo: a real chain built by the real code */
+const T = ['2026-10-10T09:00:00.000Z', '2026-10-10T09:00:01.000Z', '2026-10-10T09:00:02.000Z', '2026-10-10T09:01:10.000Z', '2026-10-10T09:01:11.000Z'];
+const mkChain = () => {
+  let last = null; const out = [];
+  [['run_started', { planner: 'support-refund' }, 'Run started'], ['call_proposed', { tool: 'refund_payment', amount: 500000 }, 'Refund proposed'], ['policy_decision', { effect: 'approve', rule: 'refund-medium' }, 'Held: needs a person'], ['approved', { by: 'human:priya', amount: 500000 }, 'Approved by a person'], ['executed', { ok: true }, 'Refund ran once']]
+    .forEach(([type, data, label], i) => { last = nextRecord('run_demo', last, type, data, T[i]); out.push({ r: last, label }); });
+  return out;
+};
+let chain = mkChain();
+function draw() {
+  const v = verifyChain(chain.map(c => c.r));
+  $('chain').replaceChildren(...chain.map((c, i) => mk('div', { className: 'blk' + (!v.valid && c.r.seq === v.at ? ' bad' : (!v.valid && c.r.seq > v.at ? ' after' : '')), role: 'listitem' }, mk('b', {}, `${c.r.seq}. ${c.label}`), mk('span', {}, c.r.hash.slice(0, 10)))));
+  const r = $('res');
+  r.className = 'res ' + (v.valid ? 'ok' : 'no');
+  r.textContent = v.valid ? `Chain valid: ${v.records} records, head ${v.head.slice(0, 12)}.` : `Chain broken at record ${v.at} (${v.reason.replaceAll('_', ' ')}). Everything after it can no longer be trusted.`;
+}
+$('tam').onclick = () => { chain = mkChain(); const c = chain[3]; c.r = { ...c.r, data: { by: 'human:priya', amount: 50000 } }; draw(); };
+$('rst').onclick = () => { chain = mkChain(); draw(); };
+draw();
+})();
+</script>
