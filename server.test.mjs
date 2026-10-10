@@ -6,10 +6,10 @@ import { once } from 'node:events';
 const PORT = 4400 + Math.floor(Math.random() * 400);
 const base = `http://127.0.0.1:${PORT}`;
 let child;
-const post = (path, body, headers = {}) => fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+const post = (path, body, headers = {}) => fetch(`${base}${path}`, { method: 'POST', headers: { 'x-ag-csrf': '1', ...headers }, body: JSON.stringify(body) });
 
 async function start(env) {
-  child = spawn(process.execPath, ['server.mjs'], { env: { ...process.env, DATABASE_URL: '', PORT: String(PORT), ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
+  child = spawn(process.execPath, ['server.mjs'], { env: { ...process.env, DATABASE_URL: '', AUTH: 'off', PORT: String(PORT), ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve, reject) => { child.stdout.on('data', d => String(d).includes('ready') && resolve()); child.on('error', reject); setTimeout(() => reject(new Error('server did not start')), 5000); });
 }
 const stop = async () => { child.kill(); await once(child, 'exit'); };
@@ -54,25 +54,54 @@ test('attack scenarios never cause side effects; bad input is rejected', async (
     assert.equal(w.outbox.length, 0);
     assert.ok(!w.commands.some(c => c.includes(';')));
     assert.equal((await post('/api/runs', { scenario: 'nope' })).status, 400);
-    assert.equal((await fetch(`${base}/api/runs`, { method: 'POST', body: '{bad' })).status, 400);
-    assert.equal((await fetch(`${base}/api/runs`, { method: 'POST', body: JSON.stringify({ pad: 'x'.repeat(20000) }) }).catch(() => ({ status: 413 }))).status, 413);
+    assert.equal((await fetch(`${base}/api/runs`, { method: 'POST', headers: { 'x-ag-csrf': '1' }, body: '{bad' })).status, 400);
+    assert.equal((await fetch(`${base}/api/runs`, { method: 'POST', headers: { 'x-ag-csrf': '1' }, body: JSON.stringify({ pad: 'x'.repeat(20000) }) }).catch(() => ({ status: 413 }))).status, 413);
     const check = await (await post('/api/policy/check', { tool: 'run_command', args: { command: 'ls; cat x' } })).json();
     assert.equal(check.effect, 'deny');
   } finally { await stop(); }
 });
 
-test('with APPROVER_TOKEN set, approvals need the token and the server names the approver', async () => {
-  await start({ APPROVER_TOKEN: 'secret-token-for-test', APPROVER_NAME: 'human:ops' });
+const J = { 'x-ag-csrf': '1' };
+function cookieJar() { let c = ''; return { set(res) { const sc = res.headers.get('set-cookie'); if (sc) c = sc.split(';')[0]; }, headers: () => ({ ...J, cookie: c }) }; }
+
+test('accounts mode: sign-in required, setup once, roles enforced, approver named by the server', async () => {
+  await start({ AUTH: 'on', SETUP_TOKEN: 'setup-secret-xyz' });
   try {
-    const started = await (await post('/api/runs', { scenario: 'support-refund' })).json();
-    const [p] = await (await fetch(`${base}/api/approvals`)).json();
-    const url = `/api/runs/${started.run.id}/calls/${p.call.id}/decision`;
-    const body = { by: 'agent:support-refund', decision: 'approve', hash: p.call.hash };
-    assert.equal((await post(url, body)).status, 401);
-    assert.equal((await post(url, body, { 'x-approver-token': 'wrong-token-value-xxx' })).status, 401);
-    const ok = await post(url, body, { 'x-approver-token': 'secret-token-for-test' });
-    assert.equal(ok.status, 200, 'a client-supplied name cannot override the server-assigned approver');
-    const v = await ok.json();
-    assert.equal(v.state.calls.find(c => c.id === p.call.id).approval.by, 'human:ops');
+    const anon = await fetch(`${base}/api/runs`); assert.equal(anon.status, 401);
+    const me = await (await fetch(`${base}/api/auth/me`)).json();
+    assert.equal(me.needsSetup, true); assert.equal(me.user, null); assert.equal(me.setupTokenRequired, true);
+    const admin = { email: 'admin@example.com', name: 'Admin', password: 'admin-password-123' };
+    assert.equal((await post('/api/auth/setup', admin, J)).status, 403, 'setup needs the token');
+    const nocsrf = await fetch(`${base}/api/auth/setup`, { method: 'POST', body: JSON.stringify({ ...admin, setupToken: 'setup-secret-xyz' }) });
+    assert.equal(nocsrf.status, 403, 'mutating requests need the csrf header');
+    const jar = cookieJar();
+    const setup = await post('/api/auth/setup', { ...admin, setupToken: 'setup-secret-xyz' }, J);
+    assert.equal(setup.status, 201); jar.set(setup);
+    assert.match(setup.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+    assert.equal((await post('/api/auth/setup', { ...admin, setupToken: 'setup-secret-xyz' }, J)).status, 409);
+
+    const viewer = await post('/api/users', { email: 'v@example.com', name: 'Vee', password: 'viewer-password-1', role: 'viewer' }, jar.headers());
+    assert.equal(viewer.status, 201);
+    const approver = await post('/api/users', { email: 'a@example.com', name: 'Aye', password: 'approver-password-1', role: 'approver' }, jar.headers());
+    assert.equal(approver.status, 201);
+
+    const started = await (await post('/api/runs', { scenario: 'support-refund' }, jar.headers())).json();
+    const [pend] = await (await fetch(`${base}/api/approvals`, { headers: jar.headers() })).json();
+
+    const vj = cookieJar(); vj.set(await post('/api/auth/login', { email: 'v@example.com', password: 'viewer-password-1' }, J));
+    assert.equal((await fetch(`${base}/api/approvals`, { headers: vj.headers() })).status, 200, 'viewers can read');
+    const blocked = await post(`/api/runs/${started.run.id}/calls/${pend.call.id}/decision`, { decision: 'approve', hash: pend.call.hash }, vj.headers());
+    assert.equal(blocked.status, 403, 'viewers cannot approve');
+    assert.equal((await post('/api/users', { email: 'x@example.com', name: 'X', password: 'password-password', role: 'viewer' }, vj.headers())).status, 403);
+    assert.equal((await post('/api/auth/login', { email: 'v@example.com', password: 'nope-nope-nope' }, J)).status, 401);
+
+    const aj = cookieJar(); aj.set(await post('/api/auth/login', { email: 'a@example.com', password: 'approver-password-1' }, J));
+    const ok = await post(`/api/runs/${started.run.id}/calls/${pend.call.id}/decision`, { by: 'human:somebody-else', decision: 'approve', hash: pend.call.hash }, aj.headers());
+    assert.equal(ok.status, 200);
+    const done = await ok.json();
+    assert.equal(done.state.calls.find(c => c.id === pend.call.id).approval.by, 'human:a@example.com', 'a client-supplied name is ignored');
+
+    await post('/api/auth/logout', {}, aj.headers());
+    assert.equal((await fetch(`${base}/api/runs`, { headers: aj.headers() })).status, 401, 'logout ends the session');
   } finally { await stop(); }
 });

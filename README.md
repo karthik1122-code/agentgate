@@ -8,13 +8,24 @@ The agents in this repo are **scripted** (`src/scenarios.mjs`), not language mod
 
 ```bash
 npm install
-npm start                 # http://localhost:4200, in-memory store
-DATABASE_URL=postgres://... npm start   # durable runs in Postgres
-npm test                  # 56 tests (61 with TEST_DATABASE_URL for the Postgres store)
+npm start                 # http://localhost:4200, in-memory store; the first visit creates the administrator
+DATABASE_URL=postgres://... npm start   # durable runs, accounts and sessions in Postgres
+AUTH=off npm start        # local demo only: no sign-in, anyone can approve
+npm test                  # 63 tests (69 with TEST_DATABASE_URL for the Postgres store)
 npm run adversarial       # prints the table below
 ```
 
-Set `APPROVER_TOKEN` before exposing it anywhere public. With it, decisions need an `x-approver-token` header and the server, not the browser, names the approver. Without it the browser names the approver, which is a local demo only.
+## Accounts and roles
+
+Sign-in is on by default. The first visit shows a setup screen that creates the administrator; set `SETUP_TOKEN` before deploying so a stranger who finds the URL first cannot claim that account. The administrator adds people under **Team**.
+
+| Role | Can do |
+|---|---|
+| viewer | read approvals, runs and policy |
+| approver | also start runs, dry-run calls, approve and reject |
+| admin | also manage people and reset the sandbox |
+
+The approver recorded in the log is the signed-in user's email. A name sent by the browser is ignored. Passwords are hashed with scrypt, sessions are random tokens stored only as SHA-256 hashes, cookies are `HttpOnly; SameSite=Strict` (and `Secure` over HTTPS), every change needs a custom `x-ag-csrf` header, and repeated failed logins lock that email and address for 15 minutes.
 
 ## What it guarantees (and the test for each)
 
@@ -23,7 +34,7 @@ Set `APPROVER_TOKEN` before exposing it anywhere public. With it, decisions need
 | The policy judges exactly what runs | Arguments are validated and canonicalised first (paths resolved, URL-decoded, case folded); the canonical form is what is hashed, judged and executed. |
 | Default deny | A call no rule matches is denied. |
 | Approval is for one specific call | The approver submits the call hash; a different hash is refused (409). |
-| Four eyes | The approver cannot be the actor that proposed the call (403). |
+| Four eyes | The approver cannot be the actor that proposed the call (403). With accounts on, the approver is the signed-in user, so it cannot be spoofed from the browser. |
 | Approvals expire | 15 minutes by default; an expired call is never executed. |
 | Policy is re-checked at execution | An approved call is judged again before it runs. |
 | Effectively once | Execution uses an idempotency key; a retry after a crash does not repeat the side effect. |
@@ -58,11 +69,13 @@ I applied 15 deliberate bugs by hand (for example: remove the same-actor check, 
 - Secret detection is regex-based. It catches common key and private-key shapes, not arbitrary secrets.
 - The ReDoS guard on patterns is a heuristic.
 - An email to an internal address can still carry sensitive content; the content check is the same regexes.
-- Without `APPROVER_TOKEN`, the approver name is self-declared. With it, there is one shared token, not per-user identity.
+- Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person.
+- Login throttling is in memory, so it resets on restart and is per server instance.
+- `AUTH=off` has no identity at all and must never be exposed publicly.
 - Scripted planners only. No LLM planner, so nothing here measures prompt-injection resistance of a real model.
 - Truncating the newest records of a log is not detectable without an externally stored head hash. The chain detects edits and deletions in the middle.
 - The tool set is five simulated tools. Real tools need their own validators.
 
 ## Layout
 
-`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `server.mjs` + `public/` dashboard · `EXPLAIN.md` interview prep.
+`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `server.mjs` + `public/` dashboard · `EXPLAIN.md` interview prep.

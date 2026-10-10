@@ -11,8 +11,6 @@ services:
         value: 22
       - key: DATABASE_URL
         sync: false
-      # Set a token before exposing this publicly. Without it, approvals are open (demo mode).
-      - key: APPROVER_TOKEN
+      # Required in practice: the first account becomes the administrator, so set this before the URL is public.
+      - key: SETUP_TOKEN
         sync: false
-      - key: APPROVER_NAME
-        value: human:approver

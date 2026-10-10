@@ -36,13 +36,16 @@ AI agents call tools: send email, issue refunds, write files. AgentGate sits bet
 **1. Why not just ask the model to be careful?** A model can be talked out of its instructions by any text it reads. A gate outside the model enforces the rule whatever the model believes.
 **2. What does canonicalisation stop?** Encoded traversal (`%2e%2e`), case tricks, absolute paths, and the mismatch between what was checked and what runs.
 **3. How is "once" guaranteed?** Idempotency key on execution plus optimistic concurrency on the log (`expectedSeq`), so two drivers cannot both advance the same run.
-**4. What stops an agent approving its own refund?** The decide step refuses an approver equal to the run's actor, and with `APPROVER_TOKEN` the server assigns the approver name so a client cannot claim to be someone else.
+**4. What stops an agent approving its own refund?** The decide step refuses an approver equal to the run's actor, and the server takes the approver from the signed-in session, so a client cannot claim to be someone else.
+**4b. How do your sessions work?** A random 32-byte token in an HttpOnly, SameSite=Strict cookie. Only its SHA-256 is stored, so a database leak does not hand out live sessions. Passwords use scrypt with a per-user salt. Mutating requests need a custom header, which a cross-site page cannot send without a CORS preflight, and the server sends no CORS headers.
+**4c. Why a setup token?** The first account becomes admin. On a public URL, whoever gets there first would own the gate, so deployment sets `SETUP_TOKEN` and the setup form needs it.
 **5. Is the hash chain secure?** It detects edits and mid-log deletions. It does not stop someone with database access rewriting the whole chain, and removing the newest records is undetectable without an externally stored head.
 **6. What if the policy has a bug?** Then it is wrong in the way it is written. The adversarial suite and the 15 mutation checks test the engine and the default policy against cases I wrote; they do not prove the policy complete.
 **7. How would this work with a real LLM agent?** Implement the planner interface with a model call. The gate does not change. I would then measure injection attempts against the real model, which I have not done.
 **8. What would you do next?** An LLM planner with a measured injection suite, per-user approver identity, a real tool behind the gate in a sandbox, and an external anchor for the log head.
 
 ## Things I should say honestly
+- Accounts are basic: email and password, no reset flow, SSO or two-factor.
 - Planners are scripts and the world is simulated. No real email, money or commands.
 - The 56-case suite and the policy are both mine.
 - I built this with AI assistance and can walk through every file and change a rule live.

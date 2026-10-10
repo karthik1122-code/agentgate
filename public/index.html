@@ -3,63 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentGate: a policy gate for AI agent tool calls</title>
-<meta name="description" content="Every tool call an AI agent makes passes a policy, a human approval when needed, and a tamper-evident log.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Cpath d='M9 22V10h5a4 4 0 010 8h-5' fill='none' stroke='%2334d399' stroke-width='3'/%3E%3C/svg%3E">
+<title>AgentGate: approvals for AI agent actions</title>
+<meta name="description" content="Every action an AI agent takes passes a policy, a human approval when needed, and a tamper-evident log.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f4bff'/%3E%3Cpath d='M8 24V13a8 8 0 0116 0v11' fill='none' stroke='white' stroke-width='3'/%3E%3Crect x='13' y='17' width='6' height='7' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="logo">AG</span><div><h1>AgentGate</h1><p>Policy gate and approval queue for AI agent tool calls</p></div></div>
-  <div class="meta" id="meta" aria-live="polite">connecting…</div>
-</header>
-
-<main>
-  <section class="card" aria-labelledby="h-start">
-    <h2 id="h-start">1. Start a scripted agent</h2>
-    <p class="hint">These agents are scripts, not language models. The point is what the gate does with their calls. The world (files, outbox, refund ledger) is simulated.</p>
-    <div id="scenarios" class="scenarios"></div>
-    <button id="reset" class="ghost">Reset simulated world</button>
-  </section>
-
-  <section class="card" aria-labelledby="h-appr">
-    <h2 id="h-appr">2. Approval queue <span class="count" id="appr-count">0</span></h2>
-    <div class="row">
-      <label for="approver">You are</label>
-      <input id="approver" value="human:karthik" maxlength="40" autocomplete="off">
-      <span class="hint">The agent is <code>agent:…</code>. An approver cannot be the actor that proposed the call.</span>
-    </div>
-    <div id="queue" class="queue"><p class="empty">Nothing is waiting. Start the "Support agent handles a refund" scenario.</p></div>
-  </section>
-
-  <section class="card wide" aria-labelledby="h-run">
-    <h2 id="h-run">3. Run timeline</h2>
-    <div id="runs" class="runs"></div>
-    <div id="run-detail"><p class="empty">Select a run.</p></div>
-  </section>
-
-  <section class="card" aria-labelledby="h-world">
-    <h2 id="h-world">Simulated world</h2>
-    <div id="world"></div>
-  </section>
-
-  <section class="card" aria-labelledby="h-check">
-    <h2 id="h-check">Dry-run a call against the policy</h2>
-    <form id="check">
-      <label for="tool">Tool</label><select id="tool"></select>
-      <label for="args">Arguments (JSON)</label><textarea id="args" rows="5" spellcheck="false"></textarea>
-      <button type="submit">Check</button>
-    </form>
-    <div id="check-out" aria-live="polite"></div>
-  </section>
-
-  <section class="card wide" aria-labelledby="h-pol">
-    <h2 id="h-pol">Active policy <code id="pol-hash"></code></h2>
-    <p class="hint">Default is <strong>deny</strong>. A call is canonicalised first (paths resolved, URL-decoded, case folded), then judged, and the same canonical form is what runs.</p>
-    <div id="policy"></div>
-  </section>
-</main>
-<footer>All data is simulated. Nothing here sends email, moves money or runs commands.</footer>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="auth" hidden></div>
+<div id="app" hidden>
+  <aside class="rail">
+    <a class="brand" href="#approvals" aria-label="AgentGate home"><span class="mark" aria-hidden="true"></span><b>AgentGate</b></a>
+    <nav id="nav" aria-label="Sections"></nav>
+    <div class="who" id="who"></div>
+  </aside>
+  <main id="view" tabindex="-1"></main>
+</div>
 <script src="app.js" type="module"></script>
 </body>
 </html>
