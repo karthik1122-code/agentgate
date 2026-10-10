@@ -29,7 +29,7 @@ const headers = {
   'content-security-policy': "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
 };
 const hits = new Map();
-const limited = ip => { const now = Date.now(); const l = (hits.get(ip) || []).filter(t => now - t < 60_000); l.push(now); hits.set(ip, l); return l.length > 60; };
+const limited = ip => { const now = Date.now(); const l = (hits.get(ip) || []).filter(t => now - t < 60_000); l.push(now); hits.set(ip, l); return l.length > 240; };
 const send = (res, status, body, extra = {}) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers, ...extra }); res.end(JSON.stringify(body)); };
 const readJson = req => new Promise((resolve, reject) => {
   let size = 0, big = false; const chunks = [];
@@ -114,6 +114,23 @@ async function route(req, res, url) {
       for (const c of v.state.calls.filter(x => x.state === 'pending_approval')) pending.push({ runId: r.id, actor: r.actor, planner: r.planner, call: { id: c.id, tool: c.tool, args: c.args, facts: c.facts, hash: c.hash, reason: c.decision.reason, rules: c.decision.rules.map(x => x.id), expiresAt: c.approval.expiresAt, requestedAt: c.approval.requestedAt } });
     }
     return send(res, 200, pending);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/stats') {
+    const runs = await store.listRuns(30);
+    const views = (await Promise.all(runs.map(r => runView(r.id)))).filter(Boolean);
+    const s = { runs: runs.length, calls: 0, allow: 0, approve: 0, deny: 0, stopped: 0, valid: 0, checked: views.length, tools: {}, feed: [] };
+    for (const v of views) {
+      if (v.integrity.valid) s.valid += 1;
+      const toolOf = new Map(v.state.calls.map(c => [c.id, c.tool]));
+      for (const c of v.state.calls) {
+        s.calls += 1; const eff = c.decision && c.decision.effect; if (eff) s[eff] += 1;
+        const t = (s.tools[c.tool] ||= { allow: 0, approve: 0, deny: 0 }); if (eff) t[eff] += 1;
+        if (['denied', 'rejected', 'expired'].includes(c.state)) s.stopped += 1;
+      }
+      for (const e of v.events) { const d = e.data || {}; s.feed.push({ at: e.at, type: e.type, run: v.state.runId, data: { tool: d.tool || toolOf.get(d.call_id), effect: d.effect, reason: d.reason, by: d.by, planner: d.planner } }); }
+    }
+    s.feed.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)); s.feed = s.feed.slice(0, 12);
+    return send(res, 200, s);
   }
   if (m && req.method === 'GET' && !m[2]) { const v = await runView(m[1]); return v ? send(res, 200, v) : send(res, 404, { error: 'not_found' }); }
   if (m && m[2] && req.method === 'POST') {
