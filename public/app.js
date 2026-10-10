@@ -70,19 +70,29 @@ const NAV = [['overview', 'Overview'], ['approvals', 'Approvals'], ['runs', 'Run
 function shell() {
   $('auth').hidden = true; $('auth').replaceChildren(); $('app').hidden = false;
   const nav = $('nav'); nav.replaceChildren();
+  const GROUP = { overview: 'Workspace', sandbox: 'Tools', team: 'Admin' };
   for (const [id, label, role] of NAV) {
     if (role && !can(role)) continue;
+    if (GROUP[id]) nav.append(el('span', { class: 'grp' }, GROUP[id]));
     nav.append(el('a', { href: `#${id}`, 'aria-current': view === id ? 'page' : false }, icon(id), label, id === 'approvals' && pending.length ? el('span', { class: 'pill' }, pending.length) : null));
   }
   const sp = $('openpal'); if (!sp.firstChild) sp.append(icon('search'), el('span', {}, 'Search or jump to'), el('kbd', {}, '⌘K'));
-  $('sys').replaceChildren(
-    el('div', {}, el('span', { class: 'live' }, 'Live'), el('b', { id: 'upd' }, 'just now')),
-    health ? el('div', {}, 'Policy', el('b', { class: 'mono' }, health.policyHash.slice(0, 8))) : null,
-    health ? el('div', {}, 'Mode', el('b', {}, me.authEnabled ? 'Accounts' : 'Demo')) : null);
+  const crumb = NAV.find(n => n[0] === view)[1];
+  $('topbar').replaceChildren(
+    el('div', { class: 'crumb' }, el('a', { href: '#overview' }, 'AgentGate'), el('span', { class: 'sep' }, '/'), el('b', {}, crumb)),
+    el('div', { class: 'tright' },
+      el('span', { class: 'chip' }, el('span', { class: 'live' }, 'Live'), el('span', { id: 'upd' }, 'just now')),
+      el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': isLight() ? 'Switch to dark theme' : 'Switch to light theme', title: 'Theme', onclick: () => { setTheme(isLight() ? 'dark' : 'light'); shell(); } }, icon(isLight() ? 'moon' : 'sun'))));
+  $('status').replaceChildren(
+    el('div', { class: 'sl' },
+      health ? el('span', {}, 'policy ', el('b', {}, health.policyHash.slice(0, 8))) : null,
+      health ? el('span', {}, 'store ', el('b', {}, String(health.store).split(' ')[0])) : null,
+      el('span', {}, 'mode ', el('b', {}, me.authEnabled ? 'accounts' : 'demo')),
+      el('span', {}, pending.length ? `${pending.length} awaiting approval` : 'nothing waiting')),
+    el('div', { class: 'sr' }, el('span', {}, el('kbd', {}, '⌘K'), ' commands'), view === 'approvals' ? el('span', {}, el('kbd', {}, 'A'), ' approve ', el('kbd', {}, 'R'), ' reject ', el('kbd', {}, 'J'), el('kbd', {}, 'K'), ' move') : null));
   const initials = me.user.name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   $('who').replaceChildren(...live([
     el('span', { class: 'avatar' }, initials), el('div', { class: 't' }, el('b', {}, me.user.name), el('span', {}, me.authEnabled ? me.user.role : 'demo mode')),
-    el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': isLight() ? 'Switch to dark theme' : 'Switch to light theme', title: 'Theme', onclick: () => { setTheme(isLight() ? 'dark' : 'light'); shell(); } }, icon(isLight() ? 'moon' : 'sun')),
     me.authEnabled ? el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': 'Sign out', title: 'Sign out', onclick: signOut }, icon('logout')) : null]));
 }
 async function signOut() { await api('/api/auth/logout', { method: 'POST', body: {} }); me = null; await boot(); }

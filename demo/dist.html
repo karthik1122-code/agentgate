@@ -262,6 +262,23 @@ pre.args{background:transparent;font-size:12px}
 .empty{padding:44px 24px}.empty .glyph{background:transparent;border:1px solid var(--line2);color:var(--mute)}
 .empty h3{font-size:14px}
 @media(max-width:1100px){.kpi:nth-child(2n){border-right:0}.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}}
+
+/* ===== navigation chrome: top bar, grouped sidebar, status bar ===== */
+.col{display:flex;flex-direction:column;min-width:0;min-height:100vh}
+.col>main{flex:1;width:100%}
+.topbar{position:sticky;top:0;z-index:15;display:flex;align-items:center;justify-content:space-between;gap:12px;height:44px;padding:0 32px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 82%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.crumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute);min-width:0}
+.crumb a{text-decoration:none}.crumb a:hover{color:var(--ink)}.crumb .sep{color:var(--faint)}.crumb b{color:var(--ink);font-weight:500}
+.tright{display:flex;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 10px;border:1px solid var(--line);border-radius:99px;font-size:12px;color:var(--mute)}
+.statusbar{position:sticky;bottom:0;z-index:15;display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:30px;padding:0 32px;border-top:1px solid var(--line);background:var(--bg);font:400 11.5px var(--mono);color:var(--faint)}
+.statusbar .sl,.statusbar .sr{display:flex;gap:18px;align-items:center;flex-wrap:wrap;min-width:0}
+.statusbar b{color:var(--mute);font-weight:500}.statusbar kbd{font-size:10px;margin-right:2px}
+.grp{padding:14px 8px 4px;font-size:11.5px;font-weight:600;color:var(--faint);letter-spacing:.01em}
+#nav .grp:first-child{padding-top:2px}
+.railfoot .sys{display:none}
+.who{border-top:1px solid var(--line);border-radius:0;padding:12px 8px 4px}
+@media(max-width:900px){.topbar{padding:0 14px;position:static}.statusbar{padding:0 14px;position:static}.statusbar .sr{display:none}.grp{display:none}.col{min-height:0}}
 </style>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="auth" hidden></div>
@@ -272,7 +289,7 @@ pre.args{background:transparent;font-size:12px}
     <nav id="nav" aria-label="Sections"></nav>
     <div class="railfoot"><div class="sys" id="sys"></div><div class="who" id="who"></div></div>
   </aside>
-  <main id="view" tabindex="-1"></main>
+  <div class="col"><header class="topbar" id="topbar"></header><main id="view" tabindex="-1"></main><footer class="statusbar" id="status"></footer></div>
 </div>
 <div id="pal" role="dialog" aria-modal="true" aria-label="Command menu"><div class="pbox"><input id="pin" placeholder="Go to a page or run a command" aria-label="Command" autocomplete="off"><ul id="pls" role="listbox"></ul></div></div>
 <script>
@@ -1061,19 +1078,29 @@ const NAV = [['overview', 'Overview'], ['approvals', 'Approvals'], ['runs', 'Run
 function shell() {
   $('auth').hidden = true; $('auth').replaceChildren(); $('app').hidden = false;
   const nav = $('nav'); nav.replaceChildren();
+  const GROUP = { overview: 'Workspace', sandbox: 'Tools', team: 'Admin' };
   for (const [id, label, role] of NAV) {
     if (role && !can(role)) continue;
+    if (GROUP[id]) nav.append(el('span', { class: 'grp' }, GROUP[id]));
     nav.append(el('a', { href: `#${id}`, 'aria-current': view === id ? 'page' : false }, icon(id), label, id === 'approvals' && pending.length ? el('span', { class: 'pill' }, pending.length) : null));
   }
   const sp = $('openpal'); if (!sp.firstChild) sp.append(icon('search'), el('span', {}, 'Search or jump to'), el('kbd', {}, '⌘K'));
-  $('sys').replaceChildren(
-    el('div', {}, el('span', { class: 'live' }, 'Live'), el('b', { id: 'upd' }, 'just now')),
-    health ? el('div', {}, 'Policy', el('b', { class: 'mono' }, health.policyHash.slice(0, 8))) : null,
-    health ? el('div', {}, 'Mode', el('b', {}, me.authEnabled ? 'Accounts' : 'Demo')) : null);
+  const crumb = NAV.find(n => n[0] === view)[1];
+  $('topbar').replaceChildren(
+    el('div', { class: 'crumb' }, el('a', { href: '#overview' }, 'AgentGate'), el('span', { class: 'sep' }, '/'), el('b', {}, crumb)),
+    el('div', { class: 'tright' },
+      el('span', { class: 'chip' }, el('span', { class: 'live' }, 'Live'), el('span', { id: 'upd' }, 'just now')),
+      el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': isLight() ? 'Switch to dark theme' : 'Switch to light theme', title: 'Theme', onclick: () => { setTheme(isLight() ? 'dark' : 'light'); shell(); } }, icon(isLight() ? 'moon' : 'sun'))));
+  $('status').replaceChildren(
+    el('div', { class: 'sl' },
+      health ? el('span', {}, 'policy ', el('b', {}, health.policyHash.slice(0, 8))) : null,
+      health ? el('span', {}, 'store ', el('b', {}, String(health.store).split(' ')[0])) : null,
+      el('span', {}, 'mode ', el('b', {}, me.authEnabled ? 'accounts' : 'demo')),
+      el('span', {}, pending.length ? `${pending.length} awaiting approval` : 'nothing waiting')),
+    el('div', { class: 'sr' }, el('span', {}, el('kbd', {}, '⌘K'), ' commands'), view === 'approvals' ? el('span', {}, el('kbd', {}, 'A'), ' approve ', el('kbd', {}, 'R'), ' reject ', el('kbd', {}, 'J'), el('kbd', {}, 'K'), ' move') : null));
   const initials = me.user.name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   $('who').replaceChildren(...live([
     el('span', { class: 'avatar' }, initials), el('div', { class: 't' }, el('b', {}, me.user.name), el('span', {}, me.authEnabled ? me.user.role : 'demo mode')),
-    el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': isLight() ? 'Switch to dark theme' : 'Switch to light theme', title: 'Theme', onclick: () => { setTheme(isLight() ? 'dark' : 'light'); shell(); } }, icon(isLight() ? 'moon' : 'sun')),
     me.authEnabled ? el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': 'Sign out', title: 'Sign out', onclick: signOut }, icon('logout')) : null]));
 }
 async function signOut() { await api('/api/auth/logout', { method: 'POST', body: {} }); me = null; await boot(); }
