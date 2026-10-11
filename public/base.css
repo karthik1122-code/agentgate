@@ -107,3 +107,8 @@ button.car{cursor:pointer}button.car:hover{border-color:var(--ink)}
 .kin .fw{opacity:var(--o,.3);transition:opacity .2s linear}
 /* magnetic buttons lean toward the pointer; `translate` is independent of any hover transform */
 .kin [data-mag]{transition:translate .25s cubic-bezier(.2,.8,.2,1)}
+.kin-progress{position:fixed;left:0;top:0;height:3px;width:100%;background:var(--kp,currentColor);transform:scaleX(var(--p,0));transform-origin:0 50%;z-index:100;pointer-events:none}
+.kin-spot{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s;background:radial-gradient(260px circle at var(--mx,50%) var(--my,50%),var(--sc,rgba(255,255,255,.12)),transparent 70%);border-radius:inherit}
+.kin-band{overflow:hidden;white-space:nowrap}
+.kin-band>div{display:flex;width:max-content;will-change:transform}
+@media (prefers-reduced-motion:reduce){.kin-progress{display:none}}

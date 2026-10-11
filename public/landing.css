@@ -164,3 +164,11 @@ h3{font:600 16px/1.3 var(--sans)}
 .foot-col b{color:var(--ink);font-weight:600;margin-bottom:2px}
 .foot-col a{text-decoration:none;color:var(--mute)}.foot-col a:hover{color:var(--ink);text-decoration:underline}
 .sec,.hero,#gate{scroll-margin-top:72px}
+
+/* the band: decisions drifting past, faster when you scroll */
+.band{border-block:2px solid var(--ink);background:var(--panel,transparent);padding:14px 0;margin:8px 0 0}
+.band span{margin:0 26px;font:500 16px/1 var(--mono);color:var(--mute);display:inline-flex;align-items:center}
+.band .ok,.band .hd,.band .no{font:900 34px/1 var(--display);letter-spacing:.02em;margin:0 0 0 26px}
+.band .ok{color:var(--allow)}.band .hd{color:var(--hold)}.band .no{color:var(--deny)}
+.gl li{transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+@media (hover:hover){.gl li:hover{transform:translateY(-4px)}}
