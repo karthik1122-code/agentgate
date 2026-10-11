@@ -77,11 +77,31 @@ button.car{cursor:pointer}button.car:hover{border-color:var(--ink)}
 @keyframes cut{from{opacity:0;transform:scaleX(.2)}to{opacity:1;transform:none}}
 @keyframes fade-after{from{opacity:1;filter:none}}
 
-/* kinetic type: each letter rises through its word's mask; the pointer lifts letters near it */
-.kin .kin-h .kw{display:inline-block;overflow:hidden;padding:.08em 0 .14em;margin:-.08em 0 -.14em;vertical-align:top}
-.kin .kin-h .kl{display:inline-block;transform:translateY(112%) rotate(6deg);transform-origin:0 100%;opacity:0;will-change:transform}
-.kin .kin-h.kin-in .kl{transform:translateY(calc(var(--w,0)*-.12em)) rotate(calc(var(--w,0)*-3deg));opacity:1;transition:transform .7s cubic-bezier(.2,.9,.2,1) calc(var(--i)*22ms),opacity .3s ease calc(var(--i)*22ms)}
-.kin .kin-h.kin-in.kin-done .kl{transition:transform .25s ease-out;transition-delay:0s}
-.kin .kin-h[data-kin=scramble] .kl{transform:none;opacity:1;transition:none}
-.kin .kin-h[data-kin=scramble]:not(.kin-in) .kl{opacity:0}
-.kin .kin-h[data-kin=scramble].kin-in .kl{transition:opacity .01s}
+/* kinetic type: one rule set per effect; --i is the letter index, --wi the word index */
+.kin .kin-h .kw{display:inline-block;vertical-align:top}
+.kin .kin-h .kl{display:inline-block;will-change:transform}
+.kin .kin-h.kin-in .kl{transform:translateY(calc(var(--w,0)*-.12em)) rotate(calc(var(--w,0)*-3deg))}
+.kin .kin-h.kin-done .kl,.kin .kin-h.kin-done .kw{transition:transform .25s ease-out,opacity .25s!important;transition-delay:0s!important}
+/* rise: letters climb through a mask */
+.kin .kin-h[data-fx=rise] .kw{overflow:hidden;padding:.08em 0 .14em;margin:-.08em 0 -.14em}
+.kin .kin-h[data-fx=rise] .kl{transform:translateY(112%) rotate(6deg);transform-origin:0 100%;opacity:0}
+.kin .kin-h[data-fx=rise].kin-in .kl{opacity:1;transition:transform .7s cubic-bezier(.2,.9,.2,1) calc(var(--i)*22ms),opacity .3s ease calc(var(--i)*22ms)}
+/* flip: letters fold up from the baseline and cool from a hot colour to the text colour */
+.kin .kin-h[data-fx=flip]{perspective:800px}
+.kin .kin-h[data-fx=flip] .kl{transform:rotateX(-100deg) translateY(35%);transform-origin:50% 100%;opacity:0;color:var(--kc,inherit)}
+.kin .kin-h[data-fx=flip].kin-in .kl{opacity:1;color:inherit;transition:transform .85s cubic-bezier(.2,1.25,.3,1) calc(var(--i)*32ms),opacity .2s ease calc(var(--i)*32ms),color 1.2s ease calc(var(--i)*32ms + .25s)}
+/* blur: words come into focus, large and soft to sharp */
+.kin .kin-h[data-fx=blur] .kw{filter:blur(16px);opacity:0;transform:scale(1.25) translateY(.18em)}
+.kin .kin-h[data-fx=blur].kin-in .kw{filter:none;opacity:1;transform:none;transition:filter .9s cubic-bezier(.2,.8,.2,1) calc(var(--wi)*110ms),opacity .7s ease calc(var(--wi)*110ms),transform .9s cubic-bezier(.2,.8,.2,1) calc(var(--wi)*110ms)}
+/* wipe: each word is uncovered left to right while its letters slide in behind the edge */
+.kin .kin-h[data-fx=wipe] .kw{clip-path:inset(-12% 100% -12% 0)}
+.kin .kin-h[data-fx=wipe] .kl{transform:translateX(-.5em)}
+.kin .kin-h[data-fx=wipe].kin-in .kw{clip-path:inset(-12% -4% -12% 0);transition:clip-path .8s cubic-bezier(.7,0,.2,1) calc(var(--wi)*130ms)}
+.kin .kin-h[data-fx=wipe].kin-in .kl{transition:transform .8s cubic-bezier(.2,.9,.2,1) calc(var(--wi)*130ms + var(--i)*8ms)}
+/* pop: letters spring up from small, tilted, with overshoot */
+.kin .kin-h[data-fx=pop] .kl{transform:scale(.2) rotate(-14deg);opacity:0}
+.kin .kin-h[data-fx=pop].kin-in .kl{opacity:1;transition:transform .65s cubic-bezier(.3,1.7,.5,1) calc(var(--i)*28ms),opacity .2s ease calc(var(--i)*28ms)}
+/* scroll fill: a paragraph lights up word by word as it crosses the screen */
+.kin .fw{opacity:var(--o,.2);transition:opacity .2s linear}
+/* magnetic buttons lean toward the pointer; `translate` is independent of any hover transform */
+.kin [data-mag]{transition:translate .25s cubic-bezier(.2,.8,.2,1)}

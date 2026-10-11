@@ -197,4 +197,4 @@ $('copy-code').addEventListener('click', async () => {
   loadRun();
 })();
 
-kinetic('h1, h2', { mode: 'rise' });
+kinetic({ fx: { h1: 'flip', h2: 'wipe' }, color: '#ffcc00', magnetic: '.btn.lg' });

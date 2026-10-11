@@ -1,72 +1,93 @@
-// Kinetic type: headings are split into words and letters, then revealed by a staggered rise through a mask.
-// The text stays readable to screen readers (aria-label on the heading, letters hidden) and nothing runs with reduced motion.
+// Kinetic type. Modelled on the controls a motion tool exposes: split by letter or word, stagger with a delay,
+// then move / rotate / scale / blur / colour / clip-mask each unit. Headings play when they scroll into view;
+// paragraphs fill in word by word as you scroll; large buttons lean toward the pointer.
+// Text stays readable to screen readers, and nothing runs with reduced motion.
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const GLYPHS = '0123456789abcdef';
+const fine = matchMedia('(pointer: fine)').matches;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 
-function split(root) {
-  const walk = n => {
-    if (n.nodeType === 3) {
-      const frag = document.createDocumentFragment();
-      n.textContent.split(/(\s+)/).forEach(part => {
-        if (!part) return;
-        if (/^\s+$/.test(part)) { frag.append(' '); return; }
-        const w = document.createElement('span'); w.className = 'kw';
-        for (const ch of part) { const l = document.createElement('span'); l.className = 'kl'; l.textContent = ch; l.dataset.c = ch; w.append(l); }
-        frag.append(w);
-      });
-      n.replaceWith(frag);
-    } else if (n.nodeType === 1) [...n.childNodes].forEach(walk);
-  };
+function eachText(root, fn) {
+  const walk = n => { if (n.nodeType === 3) fn(n); else if (n.nodeType === 1 && !/^(SCRIPT|STYLE|CODE|PRE)$/.test(n.tagName)) [...n.childNodes].forEach(walk); };
   [...root.childNodes].forEach(walk);
+}
+
+function splitHeading(root) {
+  let wi = 0;
+  eachText(root, n => {
+    const frag = document.createDocumentFragment();
+    n.textContent.split(/(\s+)/).forEach(part => {
+      if (!part) return;
+      if (/^\s+$/.test(part)) { frag.append(' '); return; }
+      const w = document.createElement('span'); w.className = 'kw'; w.style.setProperty('--wi', wi++);
+      for (const ch of part) { const l = document.createElement('span'); l.className = 'kl'; l.textContent = ch; w.append(l); }
+      frag.append(w);
+    });
+    n.replaceWith(frag);
+  });
   const letters = [...root.querySelectorAll('.kl')];
-  letters.forEach((l, i) => l.style.setProperty('--i', i));
+  letters.forEach((l, i) => { l.style.setProperty('--i', i); l.setAttribute('aria-hidden', 'true'); });
   return letters;
 }
 
-// Letters flicker through hex digits, then settle left to right: the hash motif, used on one headline.
-function scramble(letters) {
-  letters.forEach((l, i) => {
-    const end = l.dataset.c; if (!/[a-z0-9]/i.test(end)) return;
-    l.style.width = l.getBoundingClientRect().width + 'px';
-    const t0 = performance.now() + i * 28, dur = 380;
-    const tick = now => {
-      if (now < t0) return requestAnimationFrame(tick);
-      const k = (now - t0) / dur;
-      if (k >= 1) { l.textContent = end; return; }
-      l.textContent = GLYPHS[Math.floor(Math.random() * GLYPHS.length)]; requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+function splitFill(root) {
+  const words = [];
+  eachText(root, n => {
+    const frag = document.createDocumentFragment();
+    n.textContent.split(/(\s+)/).forEach(part => {
+      if (!part) return;
+      if (/^\s+$/.test(part)) { frag.append(' '); return; }
+      const w = document.createElement('span'); w.className = 'fw'; w.textContent = part; words.push(w); frag.append(w);
+    });
+    n.replaceWith(frag);
   });
+  return words;
 }
 
 // Letters near the pointer lift and lean, like a wave passing through the line.
 function wave(root, letters) {
   let raf = 0, px = 0, py = 0;
-  const frame = () => {
-    raf = 0;
-    for (const l of letters) {
-      const r = l.getBoundingClientRect(); const d = Math.hypot(px - (r.left + r.width / 2), py - (r.top + r.height / 2));
-      const k = Math.max(0, 1 - d / 140); l.style.setProperty('--w', k.toFixed(3));
-    }
-  };
+  const frame = () => { raf = 0; for (const l of letters) { const r = l.getBoundingClientRect(); const d = Math.hypot(px - (r.left + r.width / 2), py - (r.top + r.height / 2)); l.style.setProperty('--w', Math.max(0, 1 - d / 140).toFixed(3)); } };
   root.addEventListener('pointermove', e => { if (e.pointerType === 'touch') return; px = e.clientX; py = e.clientY; if (!raf) raf = requestAnimationFrame(frame); });
-  root.addEventListener('pointerleave', () => { letters.forEach(l => l.style.setProperty('--w', 0)); });
+  root.addEventListener('pointerleave', () => letters.forEach(l => l.style.setProperty('--w', 0)));
 }
 
-export function kinetic(sel = 'h1, h2', { hero = 'h1', mode = 'rise' } = {}) {
+function magnet(el) {
+  el.dataset.mag = '';
+  el.addEventListener('pointermove', e => {
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - (r.left + r.width / 2)) / r.width, y = (e.clientY - (r.top + r.height / 2)) / r.height;
+    el.style.translate = `${(x * 10).toFixed(1)}px ${(y * 8).toFixed(1)}px`;
+  });
+  el.addEventListener('pointerleave', () => { el.style.translate = ''; });
+}
+
+export function kinetic({ fx = { h1: 'rise', h2: 'rise' }, color = '', waveOn = 'h1', fill = '[data-fill]', magnetic = '' } = {}) {
   if (still) return;
   document.documentElement.classList.add('kin');
   const io = new IntersectionObserver(es => es.forEach(e => {
     if (!e.isIntersecting) return; io.unobserve(e.target); e.target.classList.add('kin-in');
-    if (e.target.dataset.kin === 'scramble') scramble(e.target._letters);
-    setTimeout(() => e.target.classList.add('kin-done'), e.target._letters.length * 22 + 800);
+    setTimeout(() => e.target.classList.add('kin-done'), e.target._letters.length * 40 + 1200);
   }), { threshold: 0.35 });
-  document.querySelectorAll(sel).forEach(h => {
+  for (const [sel, name] of Object.entries(fx)) document.querySelectorAll(sel).forEach(h => {
+    if (h._letters) return;
     const label = h.textContent.trim().replace(/\s+/g, ' ');
-    const letters = split(h); h._letters = letters;
-    h.setAttribute('aria-label', label); letters.forEach(l => l.setAttribute('aria-hidden', 'true'));
-    h.classList.add('kin-h');
-    if (h.matches(hero)) { h.dataset.kin = mode; if (mode === 'rise') wave(h, letters); }
+    h._letters = splitHeading(h); h.setAttribute('aria-label', label);
+    h.classList.add('kin-h'); h.dataset.fx = name; if (color) h.style.setProperty('--kc', color);
+    if (waveOn && h.matches(waveOn)) wave(h, h._letters);
     io.observe(h);
   });
+  const blocks = [...document.querySelectorAll(fill)].map(el => ({ el, words: splitFill(el) }));
+  if (blocks.length) {
+    let raf = 0;
+    const paint = () => {
+      raf = 0; const vh = innerHeight;
+      for (const { el, words } of blocks) {
+        const top = el.getBoundingClientRect().top; const p = clamp((vh * 0.9 - top) / (vh * 0.42));
+        const n = words.length; words.forEach((w, i) => w.style.setProperty('--o', (0.2 + 0.8 * clamp(p * (n + 3) - i, 0, 1)).toFixed(2)));
+      }
+    };
+    const req = () => { if (!raf) raf = requestAnimationFrame(paint); };
+    addEventListener('scroll', req, { passive: true }); addEventListener('resize', req); paint();
+  }
+  if (magnetic && fine) document.querySelectorAll(magnetic).forEach(magnet);
 }
