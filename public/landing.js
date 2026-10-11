@@ -1,4 +1,4 @@
-import { kinetic } from '/kinetic.js';
+import { kinetic, progress, spotlight, marquee } from '/kinetic.js';
 import { renderTrain, describeEvent } from '/train.js';
 
 const $ = id => document.getElementById(id);
@@ -198,3 +198,4 @@ $('copy-code').addEventListener('click', async () => {
 })();
 
 kinetic({ fx: { h1: 'flip', h2: 'wipe' }, color: '#ffcc00', magnetic: '.btn.lg' });
+progress('#ffcc00'); marquee(document.getElementById('band'), 55); spotlight('.gl li, .gate', 'rgba(255,204,0,.13)');

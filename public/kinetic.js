@@ -83,11 +83,73 @@ export function kinetic({ fx = { h1: 'rise', h2: 'rise' }, color = '', waveOn = 
       raf = 0; const vh = innerHeight;
       for (const { el, words } of blocks) {
         const top = el.getBoundingClientRect().top; const p = clamp((vh * 0.9 - top) / (vh * 0.42));
-        const n = words.length; words.forEach((w, i) => w.style.setProperty('--o', (0.2 + 0.8 * clamp(p * (n + 3) - i, 0, 1)).toFixed(2)));
+        const n = words.length; words.forEach((w, i) => w.style.setProperty('--o', (0.3 + 0.7 * clamp(p * (n + 3) - i, 0, 1)).toFixed(2)));
       }
     };
     const req = () => { if (!raf) raf = requestAnimationFrame(paint); };
     addEventListener('scroll', req, { passive: true }); addEventListener('resize', req); paint();
   }
   if (magnetic && fine) document.querySelectorAll(magnetic).forEach(magnet);
+}
+
+/* ---------- page-level motion ---------- */
+
+// A thin bar across the top that fills with scroll position.
+export function progress(color) {
+  if (still) return;
+  const bar = document.createElement('i'); bar.className = 'kin-progress'; bar.setAttribute('aria-hidden', 'true'); if (color) bar.style.setProperty('--kp', color);
+  document.body.append(bar);
+  let raf = 0;
+  const paint = () => { raf = 0; const h = document.documentElement.scrollHeight - innerHeight; bar.style.setProperty('--p', h > 0 ? (scrollY / h).toFixed(4) : 0); };
+  addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(paint); }, { passive: true }); paint();
+}
+
+// A soft light that follows the pointer inside a card.
+export function spotlight(sel, color = 'rgba(255,255,255,.12)') {
+  if (still || !fine) return;
+  document.querySelectorAll(sel).forEach(el => {
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    const s = document.createElement('i'); s.className = 'kin-spot'; s.setAttribute('aria-hidden', 'true'); s.style.setProperty('--sc', color); el.append(s);
+    el.addEventListener('pointermove', e => { const r = el.getBoundingClientRect(); s.style.setProperty('--mx', `${e.clientX - r.left}px`); s.style.setProperty('--my', `${e.clientY - r.top}px`); s.style.opacity = 1; });
+    el.addEventListener('pointerleave', () => { s.style.opacity = 0; });
+  });
+}
+
+// Numbers count up from zero the first time they scroll into view, keeping their format ("71.4%", "15 / 15").
+export function countUp(sel) {
+  if (still) return;
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return; io.unobserve(e.target);
+    const el = e.target, parts = el._parts, t0 = performance.now();
+    const step = now => {
+      const k = clamp((now - t0) / 1100), ease = 1 - Math.pow(1 - k, 4);
+      el.textContent = parts.map(p => typeof p === 'string' ? p : (p.v * ease).toFixed(p.d)).join('');
+      if (k < 1) requestAnimationFrame(step); else el.textContent = el._final;
+    };
+    requestAnimationFrame(step);
+  }), { threshold: 0.6 });
+  document.querySelectorAll(sel).forEach(el => {
+    const txt = el.textContent; if (!/\d/.test(txt)) return;
+    el._final = txt; el._parts = txt.split(/(\d+(?:\.\d+)?)/).map(p => /^\d/.test(p) ? { v: parseFloat(p), d: (p.split('.')[1] || '').length } : p).filter(p => p !== '');
+    io.observe(el);
+  });
+}
+
+// A looping band of text. It drifts on its own and speeds up and leans with scroll velocity.
+export function marquee(el, speed = 60) {
+  const track = el.firstElementChild; if (!track) return;
+  track.append(...[...track.children].map(n => n.cloneNode(true)));
+  [...track.children].slice(track.children.length / 2).forEach(n => n.setAttribute('aria-hidden', 'true'));
+  if (still) return;
+  let x = 0, last = performance.now(), lastY = scrollY, v = 0, dir = 1;
+  const half = () => track.scrollWidth / 2;
+  const tick = now => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const dy = scrollY - lastY; lastY = scrollY; if (dy) dir = dy > 0 ? 1 : -1;
+    v += (Math.min(Math.abs(dy), 80) - v) * 0.12;
+    x -= dir * (speed + v * 14) * dt * 1; const w = half(); if (w) { if (x <= -w) x += w; if (x > 0) x -= w; }
+    track.style.transform = `translate3d(${x.toFixed(1)}px,0,0) skewX(${(-dir * Math.min(v, 40) * 0.25).toFixed(2)}deg)`;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
