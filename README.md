@@ -86,6 +86,26 @@ I wrote both the policy and the attacks, so this shows the gate does what the po
 
 I applied 15 deliberate bugs by hand (for example: remove the same-actor check, skip the hash comparison, skip re-checking policy at execution, ignore the cumulative total) and ran `node --test` after each. All 15 made at least one test fail. I did not keep the mutation script, so treat this as a result I observed, not one you can rerun with a command.
 
+## Try it with an agent
+
+`examples/agent.mjs` is a small agent whose every tool call goes through the gate. The agent only proposes; the gate answers allow, hold for a person, or deny. Zero dependencies, and the world is simulated.
+
+```bash
+# No key needed: replay a scripted attack through the real engine
+node examples/agent.mjs --mock prompt-injection
+node examples/agent.mjs --mock salami-refunds
+
+# Against the deployed playground instead of the local engine
+node examples/agent.mjs --mock prompt-injection --base https://agentgate-lake.vercel.app
+
+# A real model plans the calls (Gemini function calling)
+GEMINI_API_KEY=... node examples/agent.mjs --task "Refund pay_AB12CD34 for 500 rupees and email the team"
+```
+
+Add `--ask` in a terminal to approve held calls yourself. What you see in the prompt-injection run: the harmless read runs, the email to an outside address is held, the read of `secrets/.env` is denied. In the salami run, small refunds go through until the per-run total passes ₹2,000, then every further refund is held.
+
+The Gemini path is covered by a test with a mocked API (request shape and result feedback). Live model behaviour varies and is not measured here.
+
 ## Honest limits
 
 - Secret detection is regex-based. It catches common key and private-key shapes, not arbitrary secrets.
@@ -94,10 +114,10 @@ I applied 15 deliberate bugs by hand (for example: remove the same-actor check, 
 - Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person.
 - Login throttling is in memory, so it resets on restart and is per server instance.
 - `AUTH=off` has no identity at all and must never be exposed publicly.
-- Scripted planners only. No LLM planner, so nothing here measures prompt-injection resistance of a real model.
+- The agent example can use a real model (Gemini), but the adversarial suite uses scripted planners, so nothing here measures how often a real model falls for prompt injection.
 - Truncating the newest records of a log is not detectable without an externally stored head hash. The chain detects edits and deletions in the middle.
 - The tool set is five simulated tools. Real tools need their own validators.
 
 ## Layout
 
-`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.
+`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `examples/agent.mjs` agent demo · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.
