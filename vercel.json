@@ -7,7 +7,7 @@
   "cleanUrls": true,
   "functions": { "api/**/*.mjs": { "includeFiles": "{policies,src}/**", "maxDuration": 10 } },
   "rewrites": [
-    { "source": "/api/:path((?!play/).*)", "destination": "https://agentgate-api.onrender.com/api/:path" }
+    { "source": "/api/:path((?!play/).*)", "destination": "https://agentgate-api-hbbt.onrender.com/api/:path" }
   ],
   "headers": [
     { "source": "/(.*)", "headers": [
