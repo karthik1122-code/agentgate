@@ -76,3 +76,12 @@ button.car{cursor:pointer}button.car:hover{border-color:var(--ink)}
 @keyframes snap{0%{transform:translateX(0)}25%{transform:translateX(-5px) rotate(-1deg)}50%{transform:translateX(5px) rotate(1deg)}75%{transform:translateX(-3px)}100%{transform:none}}
 @keyframes cut{from{opacity:0;transform:scaleX(.2)}to{opacity:1;transform:none}}
 @keyframes fade-after{from{opacity:1;filter:none}}
+
+/* kinetic type: each letter rises through its word's mask; the pointer lifts letters near it */
+.kin .kin-h .kw{display:inline-block;overflow:hidden;padding:.08em 0 .14em;margin:-.08em 0 -.14em;vertical-align:top}
+.kin .kin-h .kl{display:inline-block;transform:translateY(112%) rotate(6deg);transform-origin:0 100%;opacity:0;will-change:transform}
+.kin .kin-h.kin-in .kl{transform:translateY(calc(var(--w,0)*-.12em)) rotate(calc(var(--w,0)*-3deg));opacity:1;transition:transform .7s cubic-bezier(.2,.9,.2,1) calc(var(--i)*22ms),opacity .3s ease calc(var(--i)*22ms)}
+.kin .kin-h.kin-in.kin-done .kl{transition:transform .25s ease-out;transition-delay:0s}
+.kin .kin-h[data-kin=scramble] .kl{transform:none;opacity:1;transition:none}
+.kin .kin-h[data-kin=scramble]:not(.kin-in) .kl{opacity:0}
+.kin .kin-h[data-kin=scramble].kin-in .kl{transition:opacity .01s}

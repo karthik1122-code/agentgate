@@ -1,3 +1,4 @@
+import { kinetic } from '/kinetic.js';
 import { renderTrain, describeEvent } from '/train.js';
 
 const $ = id => document.getElementById(id);
@@ -195,3 +196,5 @@ $('copy-code').addEventListener('click', async () => {
   setTimeout(() => pick(2), 500);
   loadRun();
 })();
+
+kinetic('h1, h2', { mode: 'rise' });
