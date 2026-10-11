@@ -151,8 +151,16 @@ async function viewOverview() {
           tools.length ? el('div', { class: 'rowbars' }, tools.map(([name, t]) => el('div', { class: 'rb' }, el('code', {}, name), mix(t.allow, t.approve, t.deny), el('span', { class: 'n' }, t.allow + t.approve + t.deny)))) : null),
         pending.length ? el('div', { class: 'card' }, el('h2', {}, 'Needs a decision'), el('p', { class: 'cap' }, 'Held calls, oldest first.'), el('div', { class: 'list' }, pending.slice(0, 4).map(p => el('a', { class: 'item', href: '#approvals', onclick: () => { selectedApproval = key(p); } }, el('div', { class: 'r1' }, el('b', { class: 'mono' }, p.call.tool), el('span', { class: 'exp', 'data-exp': p.call.expiresAt }, '')), el('small', {}, `${p.actor} · ${p.call.reason}`))))) : null),
       el('div', { class: 'card' }, el('h2', {}, 'Recent activity'), el('p', { class: 'cap' }, 'From the hash-chained log.'),
-        s.feed.length ? el('ul', { class: 'feed' }, s.feed.map(f => el('li', {}, el('span', { class: `dot ${f.kind}` }), el('p', {}, f.text), el('small', {}, ago(f.at))))) : emptyState('inbox', 'No activity yet', 'Run a demo agent to see decisions appear here.'))));
+        s.feed.length ? el('ul', { class: 'feed' }, s.feed.map(f => el('li', {}, el('span', { class: `dot ${f.kind}` }), el('p', {}, f.text), el('small', {}, ago(f.at))))) : emptyState('inbox', 'No activity yet', 'Three steps to see AgentGate work: 1. Run a demo agent. 2. Approve or reject the call it holds. 3. Open Runs and check the log.', can('approver') && scn[0] ? el('button', { class: 'btn primary', type: 'button', onclick: () => startScenario(scn[0].id) }, icon('bolt'), 'Run a demo agent') : null))));
   document.querySelectorAll('[data-exp]').forEach(paint);
+  if (!viewOverview.seen) { viewOverview.seen = true; document.querySelectorAll('.kpis,.three').forEach(n => n.classList.add('fx')); countUp(); }
+}
+function countUp() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.kpi .v').forEach(n => {
+    const end = parseInt(n.textContent, 10); if (!(end > 0) || String(end) !== n.textContent.trim()) return;
+    const t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / 700); n.textContent = String(Math.round(end * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
+  });
 }
 
 /* ---------- approvals ---------- */
@@ -216,7 +224,7 @@ async function viewRuns() {
   if (!selectedRun || !runs.some(r => r.id === selectedRun)) selectedRun = runs[0].id;
   for (const r of runs) list.append(el('button', { class: 'item', type: 'button', 'aria-current': r.id === selectedRun, onclick: () => { selectedRun = r.id; viewRuns(); } }, el('div', { class: 'r1' }, el('b', {}, r.planner), tag(r.status)), el('small', {}, `${r.calls} calls · ${r.denials} denied · ${ago(r.created_at)}`)));
   const v = await api(`/api/runs/${selectedRun}`);
-  const chain = renderTrain(v.events, { verdict: v.integrity });
+  const chain = renderTrain(v.events, { verdict: v.integrity, animate: 'run' });
   const tl = el('ol', { class: 'tl' });
   for (const c of v.state.calls) {
     const out = c.outcome ? (c.outcome.result || c.outcome.reason || c.outcome.error || c.outcome.status) : '';

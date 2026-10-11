@@ -111,8 +111,8 @@ function drawPolicy() {
 /* ---------- runs, trains, tampering ---------- */
 let scn = null, run = null, events = [], original = [], verdict = null, selected = null;
 const STATE_WORD = { executed: 'Ran once.', denied: 'Did not run.', pending_approval: 'Waiting for a person.', approved: 'Approved.', proposed: '' };
-function drawRun() {
-  const wrap = $('train-wrap'); wrap.replaceChildren(renderTrain(events, { verdict, selected, onSelect: e => { selected = e.seq; fillRecord(); drawRun(); } }));
+function drawRun(animate = '') {
+  const wrap = $('train-wrap'); wrap.replaceChildren(renderTrain(events, { verdict, selected, animate, onSelect: e => { selected = e.seq; fillRecord(); drawRun(); } }));
   const head = verdict && verdict.valid ? verdict.head : events[events.length - 1]?.hash;
   $('run-meta').textContent = `${run.runId} · ${events.length} records · ${run.status.replaceAll('_', ' ')}${head ? ` · head ${head.slice(0, 10)}` : ''}`;
   const list = $('call-list'); list.replaceChildren();
@@ -147,7 +147,7 @@ function fillRecord() {
   ta.value = JSON.stringify(events[i].data, null, 2);
 }
 async function check(next) {
-  try { verdict = await api('/api/play/verify', { events: next }); events = next; drawRun(); }
+  try { verdict = await api('/api/play/verify', { events: next }); events = next; drawRun('verify'); }
   catch (e) { $('seal').className = 'seal bad'; $('seal-tag').className = 'tag t-invalid'; $('seal-tag').textContent = 'error'; $('seal-text').textContent = e.message; }
 }
 $('verify').addEventListener('click', async () => {
@@ -156,13 +156,13 @@ $('verify').addEventListener('click', async () => {
   const next = structuredClone(events); next.find(e => e.seq === selected).data = data; await check(next);
 });
 $('del').addEventListener('click', async () => { const next = events.filter(e => e.seq !== selected); selected = null; fillRecord(); await check(next); });
-$('restore').addEventListener('click', () => { events = structuredClone(original); verdict = run.integrity; selected = null; fillRecord(); drawRun(); });
+$('restore').addEventListener('click', () => { events = structuredClone(original); verdict = run.integrity; selected = null; fillRecord(); drawRun('run'); });
 
 async function loadRun() {
   $('train-wrap').replaceChildren(el('div', 'train-empty', 'Running the agent through the gate…'));
   try {
     run = await api('/api/play/run', { scenario: scn, approve: $('auto-approve').checked });
-    original = structuredClone(run.events); events = structuredClone(run.events); verdict = run.integrity; selected = null; fillRecord(); drawRun();
+    original = structuredClone(run.events); events = structuredClone(run.events); verdict = run.integrity; selected = null; fillRecord(); drawRun('run');
   } catch (e) { $('train-wrap').replaceChildren(el('div', 'train-empty', e.message)); }
 }
 function drawTabs() {

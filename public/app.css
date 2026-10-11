@@ -146,3 +146,10 @@ td{padding:11px 16px;border-top:1px solid var(--line);vertical-align:top;font-si
   .topbar{padding:0 16px;position:static}main#view{padding:22px 16px 48px}.statusbar{padding:8px 16px;position:static}
   .rb{grid-template-columns:100px minmax(0,1fr) 24px}.fact.big .vv{font-size:44px}
 }
+
+/* first load of the overview: tiles rise in order, decision bars draw left to right */
+.kpis.fx .kpi{animation:in .45s cubic-bezier(.2,.8,.2,1) both}
+.kpis.fx .kpi:nth-child(2){animation-delay:.07s}.kpis.fx .kpi:nth-child(3){animation-delay:.14s}.kpis.fx .kpi:nth-child(4){animation-delay:.21s}
+.three.fx .mix i{animation:mixin .8s cubic-bezier(.2,.8,.2,1) .25s both}
+@keyframes mixin{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0)}}
+.card.empty .actions{margin-top:12px}

@@ -64,3 +64,15 @@ button.car{cursor:pointer}button.car:hover{border-color:var(--ink)}
 .coupling{flex:none;width:24px;align-self:center;height:6px;margin:0 0 16px;background:var(--ink);position:relative;top:-2px}
 .coupling.cut{background:repeating-linear-gradient(90deg,var(--deny) 0 4px,transparent 4px 8px)}
 .coupling.after{opacity:.35}
+
+/* motion: cars couple in one after another; a failed check snaps at the broken car and dims what follows */
+.train.go.run .car,.train.go.run .coupling{animation:car-in .42s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i)*70ms)}
+.train.go.chk .car:not(.after):not(.broken),.train.go.chk .coupling:not(.after):not(.cut){animation:chk .5s ease both;animation-delay:calc(var(--i)*90ms)}
+.train.go.chk .car.broken{animation:snap .6s cubic-bezier(.3,1.6,.5,1) both;animation-delay:calc(var(--i)*90ms)}
+.train.go.chk .car.after,.train.go.chk .coupling.after{animation:fade-after .6s ease both;animation-delay:calc((var(--bi,0) + 1)*90ms + .2s)}
+.train.go.chk .coupling.cut{animation:cut .5s ease both;animation-delay:calc(var(--i)*90ms)}
+@keyframes car-in{from{opacity:0;transform:translateX(-14px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes chk{0%{box-shadow:0 0 0 0 var(--allow-soft)}40%{box-shadow:0 0 0 5px var(--allow-soft)}100%{box-shadow:0 0 0 0 transparent}}
+@keyframes snap{0%{transform:translateX(0)}25%{transform:translateX(-5px) rotate(-1deg)}50%{transform:translateX(5px) rotate(1deg)}75%{transform:translateX(-3px)}100%{transform:none}}
+@keyframes cut{from{opacity:0;transform:scaleX(.2)}to{opacity:1;transform:none}}
+@keyframes fade-after{from{opacity:1;filter:none}}
