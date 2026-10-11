@@ -24,6 +24,7 @@ AI agents call tools: send email, issue refunds, write files. AgentGate sits bet
 | Event sourcing | Audit and resume come from the same data. | State is derived; needs the fold to be correct and tested. |
 | Cumulative budget per run | Twelve refunds of ₹190 each each pass a ₹200 limit but not a ₹2,000 total. | Needs a notion of "run". |
 | Tool output is untrusted | A file can say "ignore your policy". The gate never reads it as instructions. | The planner (an LLM) can still be fooled; the gate limits the damage. |
+| The agent only proposes | The example agent never executes anything itself. It sends each call to the gate and acts only on the answer, so a confused or hijacked model has no direct path to a tool. | The agent has to cope with "held" and "denied" answers. |
 | Report false blocks too | A gate that denies everything has a perfect attack score. | More cases to maintain. |
 
 ## What broke, and how I found out
@@ -42,7 +43,9 @@ AI agents call tools: send email, issue refunds, write files. AgentGate sits bet
 **5. Is the hash chain secure?** It detects edits and mid-log deletions. It does not stop someone with database access rewriting the whole chain, and removing the newest records is undetectable without an externally stored head.
 **6. What if the policy has a bug?** Then it is wrong in the way it is written. The adversarial suite and the 15 mutation checks test the engine and the default policy against cases I wrote; they do not prove the policy complete.
 **7. How would this work with a real LLM agent?** Implement the planner interface with a model call. The gate does not change. I would then measure injection attempts against the real model, which I have not done.
-**8. What would you do next?** An LLM planner with a measured injection suite, per-user approver identity, a real tool behind the gate in a sandbox, and an external anchor for the log head.
+**8. What would you do next?** Run the agent example against a real model many times and measure how often it proposes an unsafe call, turning that into a measured injection suite. Then per-user approver identity, a real tool behind the gate in a sandbox, and an external anchor for the log head.
+
+**9. Did you test it with a real LLM agent?** There is a small agent in `examples/agent.mjs` that asks Gemini which tool to call, and every call goes through the gate. The scripted attack runs are deterministic and tested. The Gemini path is tested against a mocked API, and I have not measured how often a real model falls for injection. I say that plainly. The gate does not rely on the model behaving: a fooled agent still hits the same policy.
 
 ## Things I should say honestly
 - Accounts are basic: email and password, no reset flow, SSO or two-factor.
