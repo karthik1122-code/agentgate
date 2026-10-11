@@ -83,7 +83,7 @@ export function kinetic({ fx = { h1: 'rise', h2: 'rise' }, color = '', waveOn = 
       raf = 0; const vh = innerHeight;
       for (const { el, words } of blocks) {
         const top = el.getBoundingClientRect().top; const p = clamp((vh * 0.9 - top) / (vh * 0.42));
-        const n = words.length; words.forEach((w, i) => w.style.setProperty('--o', (0.2 + 0.8 * clamp(p * (n + 3) - i, 0, 1)).toFixed(2)));
+        const n = words.length; words.forEach((w, i) => w.style.setProperty('--o', (0.3 + 0.7 * clamp(p * (n + 3) - i, 0, 1)).toFixed(2)));
       }
     };
     const req = () => { if (!raf) raf = requestAnimationFrame(paint); };
