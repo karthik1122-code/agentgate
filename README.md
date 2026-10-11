@@ -33,7 +33,7 @@ It stores nothing and is rate limited per client (`PLAY_RATE_LIMIT`, default 60 
 The dashboard is stateful (a simulated world in memory, a timer that expires old approvals, Postgres for runs and accounts), so it needs a long-running Node host. The playground is stateless, so it can run anywhere.
 
 1. **Backend on Render**: create a web service from `render.yaml` (named `agentgate-api`). Set `DATABASE_URL` (a Postgres connection string, for example from Neon) and `SETUP_TOKEN`, then open the service once and create the administrator. `TRUST_PROXY=1` is already set so rate limits and login lockout see the real client address.
-2. **Site on Vercel**: import the repo. `vercel.json` serves `public/`, runs `api/play/*` as Vercel functions, and rewrites every other `/api/*` request to the Render service. If your Render URL is not `https://agentgate-api.onrender.com`, change it in `vercel.json`.
+2. **Site on Vercel**: import the repo. `vercel.json` serves `public/`, runs `api/play/*` as Vercel functions, and rewrites every other `/api/*` request to the Render service. If your Render URL is not `https://agentgate-api-hbbt.onrender.com`, change it in `vercel.json`.
 
 If the backend is asleep or down, the landing page still works, and `/app` shows a "can't reach the server" screen.
 
