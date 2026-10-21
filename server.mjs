@@ -126,7 +126,7 @@ async function route(req, res, url) {
       if (v.integrity.valid) s.valid += 1;
       const toolOf = new Map(v.state.calls.map(c => [c.id, c.tool]));
       for (const c of v.state.calls) {
-        s.calls += 1; const eff = c.decision && c.decision.effect; if (eff) s[eff] += 1;
+        s.calls += 1; const eff = (c.decision && c.decision.effect) || (c.state === 'denied' ? 'deny' : null); if (eff) s[eff] += 1;
         const t = (s.tools[c.tool] ||= { allow: 0, approve: 0, deny: 0 }); if (eff) t[eff] += 1;
         if (['denied', 'rejected', 'expired'].includes(c.state)) s.stopped += 1;
       }

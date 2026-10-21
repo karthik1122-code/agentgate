@@ -152,3 +152,13 @@ test('playground API: rate limited per client', async () => {
     assert.deepEqual(codes, [200, 200, 200, 200, 429, 429]);
   } finally { await stop(); }
 });
+
+test('stats count denied calls', async () => {
+  await start({});
+  try {
+    await post('/api/runs', { scenario: 'path-traversal' });
+    const stats = await (await fetch(`${base}/api/stats`)).json();
+    assert.ok(stats.deny >= 1, 'denied calls should be counted');
+    assert.equal(stats.deny, stats.stopped);
+  } finally { await stop(); }
+});
