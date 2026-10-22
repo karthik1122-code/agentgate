@@ -62,7 +62,8 @@ function authScreen() {
   });
   box.append(el('div', { class: 'authcard' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
     el('h1', {}, setup ? 'Set up AgentGate' : 'Sign in to AgentGate'),
-    el('p', { class: 'sub' }, setup ? 'Create the first administrator. They can add approvers and viewers afterwards.' : 'Approvals are tied to your account and recorded in the audit log.'), form));
+    el('p', { class: 'sub' }, setup ? 'Create the first administrator. They can add approvers and viewers afterwards.' : 'Approvals are tied to your account and recorded in the audit log.'), form,
+    setup ? null : el('p', { class: 'sub' }, 'Just looking? ', el('a', { href: '/#gate' }, 'Try the live gate, no sign-in needed.'))));
   setTimeout(() => $(setup ? 'name' : 'email').focus(), 0);
 }
 

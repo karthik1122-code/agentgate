@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
-    "adversarial": "node support/adversarial-report.mjs"
+    "adversarial": "node support/adversarial-report.mjs",
+    "reset-admin": "node scripts/reset-admin.mjs"
   },
   "dependencies": {
     "pg": "^8.13.0"

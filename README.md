@@ -41,6 +41,8 @@ If the backend is asleep or down, the landing page still works, and `/app` shows
 
 Sign-in is on by default. The first visit shows a setup screen that creates the administrator; set `SETUP_TOKEN` before deploying so a stranger who finds the URL first cannot claim that account. The administrator adds people under **Team**.
 
+Lost the administrator password? Run `DATABASE_URL="..." npm run reset-admin` against the same database. It removes all accounts (runs and the audit log are kept), and the next visit shows the setup screen again.
+
 | Role | Can do |
 |---|---|
 | viewer | read approvals, runs and policy |
