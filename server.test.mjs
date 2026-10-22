@@ -152,3 +152,33 @@ test('playground API: rate limited per client', async () => {
     assert.deepEqual(codes, [200, 200, 200, 200, 429, 429]);
   } finally { await stop(); }
 });
+
+test('accounts mode: visitors can sign up as viewers, an admin can promote them, SIGNUP=off closes it', async () => {
+  await start({ AUTH: 'on', SETUP_TOKEN: 'setup-secret-xyz' });
+  try {
+    const guest = { email: 'guest@example.com', name: 'Guest', password: 'guest-password-123' };
+    assert.equal((await (await fetch(`${base}/api/auth/me`)).json()).signupOpen, true);
+    assert.equal((await post('/api/auth/signup', guest, J)).status, 409, 'no sign-up before the administrator exists');
+    const jar = cookieJar();
+    jar.set(await post('/api/auth/setup', { email: 'admin@example.com', name: 'Admin', password: 'admin-password-123', setupToken: 'setup-secret-xyz' }, J));
+
+    const gj = cookieJar();
+    const made = await post('/api/auth/signup', { ...guest, role: 'admin' }, J);
+    assert.equal(made.status, 201); gj.set(made);
+    const who = await (await fetch(`${base}/api/auth/me`, { headers: gj.headers() })).json();
+    assert.equal(who.user.role, 'viewer', 'a role in the request is ignored');
+    assert.equal((await post('/api/runs', { scenario: 'support-refund' }, gj.headers())).status, 403, 'viewers cannot start runs');
+    assert.equal((await post('/api/auth/signup', guest, J)).status, 409, 'same email twice is refused');
+
+    const users = await (await fetch(`${base}/api/users`, { headers: jar.headers() })).json();
+    const g = users.find(u => u.email === 'guest@example.com');
+    const patch = id => fetch(`${base}/api/users/${id}`, { method: 'PATCH', headers: { 'x-ag-csrf': '1', ...jar.headers() }, body: JSON.stringify({ role: 'approver' }) });
+    assert.equal((await patch(g.id)).status, 200);
+    assert.equal((await post('/api/runs', { scenario: 'support-refund' }, gj.headers())).status, 201, 'promoted users can run');
+  } finally { await stop(); }
+  await start({ AUTH: 'on', SIGNUP: 'off' });
+  try {
+    assert.equal((await (await fetch(`${base}/api/auth/me`)).json()).signupOpen, false);
+    assert.equal((await post('/api/auth/signup', { email: 'x@example.com', name: 'X', password: 'password-password' }, J)).status, 401, 'closed sign-up falls through to sign-in required');
+  } finally { await stop(); }
+});

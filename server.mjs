@@ -21,6 +21,8 @@ let world = createWorld(DEFAULT_FILES);
 const runtime = createRuntime({ store, policy, planners, get world() { return world; } });
 // Accounts are on by default. AUTH=off is a local demo mode where the browser names the approver; never expose it publicly.
 const AUTH_ON = process.env.AUTH !== 'off';
+// Visitors can create their own account (viewer role only). Set SIGNUP=off to close it.
+const SIGNUP_ON = AUTH_ON && process.env.SIGNUP !== 'off';
 const SETUP_TOKEN = process.env.SETUP_TOKEN || '';
 const auth = createAuth({ db: store._pool ? await createPostgresAuthStore(store._pool) : createMemoryAuthStore() });
 
@@ -44,7 +46,7 @@ const cookieOf = req => { const m = /(?:^|;\s*)ag_session=([\w-]+)/.exec(req.hea
 const secure = req => process.env.NODE_ENV === 'production' || req.headers['x-forwarded-proto'] === 'https';
 const setCookie = (req, token, maxAge) => `ag_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure(req) ? '; Secure' : ''}`;
 const DEMO_USER = { id: 'demo', email: 'demo@local', name: 'Demo', role: 'admin' };
-const authStatus = code => ({ bad_credentials: 401, locked: 429, already_set_up: 409, email_taken: 409, not_found: 404, self_delete: 409, last_admin: 409 }[code] || 400);
+const authStatus = code => ({ bad_credentials: 401, locked: 429, already_set_up: 409, email_taken: 409, not_found: 404, self_delete: 409, last_admin: 409, needs_setup: 409, signup_limited: 429, self_role: 409 }[code] || 400);
 
 const summary = state => ({ runId: state.runId, planner: state.planner, actor: state.actor, status: state.status, abortReason: state.abortReason, calls: state.calls.map(c => ({ id: c.id, tool: c.tool, args: c.args, facts: c.facts, hash: c.hash, state: c.state, decision: c.decision, outcome: c.outcome, approval: c.approval })), denials: state.denials });
 async function runView(id) {
@@ -62,11 +64,16 @@ async function route(req, res, url) {
   const token = cookieOf(req);
   const user = AUTH_ON ? await auth.userFromToken(token) : DEMO_USER;
   if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { status: 'ok', store: store.kind, policyHash: runtime.policyHash, auth: AUTH_ON ? 'accounts' : 'off (demo)', limits: runtime.limits });
-  if (req.method === 'GET' && url.pathname === '/api/auth/me') return send(res, 200, { authEnabled: AUTH_ON, needsSetup: AUTH_ON && await auth.needsSetup(), setupTokenRequired: !!SETUP_TOKEN, user });
+  if (req.method === 'GET' && url.pathname === '/api/auth/me') return send(res, 200, { authEnabled: AUTH_ON, needsSetup: AUTH_ON && await auth.needsSetup(), setupTokenRequired: !!SETUP_TOKEN, signupOpen: SIGNUP_ON, user });
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/setup') {
     const body = await readJson(req);
     if (SETUP_TOKEN && body.setupToken !== SETUP_TOKEN) return send(res, 403, { error: 'invalid_setup_token', message: 'the setup token is wrong' });
     try { await auth.setup(body); const s = await auth.login(body.email, body.password, clientIp(req)); return send(res, 201, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
+    catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
+  }
+  if (SIGNUP_ON && req.method === 'POST' && url.pathname === '/api/auth/signup') {
+    const body = await readJson(req);
+    try { await auth.signup(body, clientIp(req)); const s = await auth.login(body.email, body.password, clientIp(req)); return send(res, 201, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
     catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/login') {
@@ -82,6 +89,7 @@ async function route(req, res, url) {
     try {
       if (req.method === 'GET' && url.pathname === '/api/users') return send(res, 200, await auth.listUsers());
       if (req.method === 'POST' && url.pathname === '/api/users') return send(res, 201, await auth.createUser(await readJson(req)));
+      if (req.method === 'PATCH' && url.pathname !== '/api/users') return send(res, 200, await auth.setRole(url.pathname.split('/').pop(), (await readJson(req)).role, user.id));
       if (req.method === 'DELETE') { await auth.deleteUser(url.pathname.split('/').pop(), user.id); return send(res, 200, { ok: true }); }
     } catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }

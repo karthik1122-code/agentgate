@@ -40,31 +40,34 @@ const isLight = () => document.documentElement.dataset.theme === 'light';
 let me = null, health = null, view = 'overview', selectedRun = null, selectedApproval = null, pending = [], timer = null, tick = null, deskActions = null, lastLoad = Date.now();
 
 /* ---------- sign in / set up ---------- */
-function authScreen() {
+function authScreen(mode = 'login') {
   $('app').hidden = true; const box = $('auth'); box.hidden = false; box.replaceChildren();
   const setup = me.needsSetup;
+  const signup = !setup && mode === 'signup' && me.signupOpen;
+  const named = setup || signup;
   const err = el('p', { class: 'err', role: 'alert' });
   const f = (id, label, type = 'text', extra = {}) => el('div', { class: 'field' }, el('label', { for: id }, label), el('input', { id, type, required: true, autocomplete: type === 'password' ? (setup ? 'new-password' : 'current-password') : id === 'email' ? 'email' : 'off', ...extra }));
   const form = el('form', { novalidate: true },
-    setup ? f('name', 'Your name', 'text', { maxlength: 80 }) : null,
+    named ? f('name', 'Your name', 'text', { maxlength: 80 }) : null,
     f('email', 'Email', 'email'),
-    f('password', setup ? 'Password (10 characters or more)' : 'Password', 'password', setup ? { minlength: 10 } : {}),
+    f('password', named ? 'Password (10 characters or more)' : 'Password', 'password', named ? { minlength: 10 } : {}),
     setup && me.setupTokenRequired ? f('setupToken', 'Setup token', 'password') : null,
     err,
-    el('button', { class: 'btn primary block', type: 'submit' }, setup ? 'Create administrator' : 'Sign in'));
+    el('button', { class: 'btn primary block', type: 'submit' }, setup ? 'Create administrator' : signup ? 'Create account' : 'Sign in'));
   form.addEventListener('submit', async e => {
     e.preventDefault(); err.textContent = '';
     const v = id => ($(id) ? $(id).value : undefined);
     try {
-      await api(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body: { name: v('name'), email: v('email'), password: v('password'), setupToken: v('setupToken') } });
+      await api(setup ? '/api/auth/setup' : signup ? '/api/auth/signup' : '/api/auth/login', { method: 'POST', body: { name: v('name'), email: v('email'), password: v('password'), setupToken: v('setupToken') } });
       await boot();
     } catch (x) { err.textContent = x.message; }
   });
   box.append(el('div', { class: 'authcard' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
-    el('h1', {}, setup ? 'Set up AgentGate' : 'Sign in to AgentGate'),
-    el('p', { class: 'sub' }, setup ? 'Create the first administrator. They can add approvers and viewers afterwards.' : 'Approvals are tied to your account and recorded in the audit log.'), form,
+    el('h1', {}, setup ? 'Set up AgentGate' : signup ? 'Create your account' : 'Sign in to AgentGate'),
+    el('p', { class: 'sub' }, setup ? 'Create the first administrator. They can add approvers and viewers afterwards.' : signup ? 'New accounts can view runs, the policy and the audit log. An administrator can give you approval rights.' : 'Approvals are tied to your account and recorded in the audit log.'), form,
+    setup || !me.signupOpen ? null : el('p', { class: 'sub' }, signup ? 'Already have an account? ' : 'New here? ', el('a', { href: '#', onclick: e => { e.preventDefault(); authScreen(signup ? 'login' : 'signup'); } }, signup ? 'Sign in' : 'Create an account')),
     setup ? null : el('p', { class: 'sub' }, 'Just looking? ', el('a', { href: '/#gate' }, 'Try the live gate, no sign-in needed.'))));
-  setTimeout(() => $(setup ? 'name' : 'email').focus(), 0);
+  setTimeout(() => $(named ? 'name' : 'email').focus(), 0);
 }
 
 function offlineScreen() {
@@ -280,7 +283,7 @@ async function viewTeam() {
     err, el('button', { class: 'btn primary', type: 'submit' }, 'Add person'));
   form.addEventListener('submit', async e => { e.preventDefault(); err.textContent = ''; try { await api('/api/users', { method: 'POST', body: { name: $('n').value, email: $('e').value, password: $('p').value, role: $('r').value } }); toast('Person added'); viewTeam(); } catch (x) { err.textContent = x.message; } });
   show(head('Team', 'Who can see, decide and manage. Every approval in the log carries the approver’s email.'),
-    el('div', { class: 'three' }, el('div', { class: 'card tight scroll' }, el('table', {}, el('thead', {}, el('tr', {}, ['Name', 'Email', 'Role', ''].map(h => el('th', {}, h)))), el('tbody', {}, users.map(u => el('tr', {}, el('td', {}, u.name), el('td', {}, u.email), el('td', {}, el('span', { class: 'rule' }, u.role)), el('td', {}, u.id === me.user.id ? el('span', { class: 'mute' }, 'you') : el('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!confirm(`Remove ${u.email}? Their sessions end immediately.`)) return; try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); toast('Removed'); viewTeam(); } catch (x) { toast(x.message, true); } } }, 'Remove'))))))), form));
+    el('div', { class: 'three' }, el('div', { class: 'card tight scroll' }, el('table', {}, el('thead', {}, el('tr', {}, ['Name', 'Email', 'Role', ''].map(h => el('th', {}, h)))), el('tbody', {}, users.map(u => el('tr', {}, el('td', {}, u.name), el('td', {}, u.email), el('td', {}, u.id === me.user.id ? el('span', { class: 'rule' }, u.role) : el('select', { 'aria-label': `Role for ${u.email}`, onchange: async e => { try { await api(`/api/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }); toast('Role updated'); } catch (x) { toast(x.message, true); viewTeam(); } } }, ['viewer', 'approver', 'admin'].map(r => el('option', { value: r, selected: r === u.role }, r)))), el('td', {}, u.id === me.user.id ? el('span', { class: 'mute' }, 'you') : el('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!confirm(`Remove ${u.email}? Their sessions end immediately.`)) return; try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); toast('Removed'); viewTeam(); } catch (x) { toast(x.message, true); } } }, 'Remove'))))))), form));
 }
 
 /* ---------- command palette ---------- */

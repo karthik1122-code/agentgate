@@ -86,3 +86,29 @@ else test('postgres auth store: setup, login, session expiry, duplicate email, d
     t += 2 * 3600_000; assert.equal(await auth.userFromToken(s.token), null);
   } finally { await pool.end(); }
 });
+
+test('sign-up: refused before setup, always a viewer, duplicates and floods refused', async () => {
+  const { auth } = mk({ signupsPerHour: 2 });
+  await assert.rejects(auth.signup(good, '1.1.1.1'), e => e.code === 'needs_setup');
+  await auth.setup(good);
+  const u = await auth.signup({ email: 'new@example.com', name: 'New', password: 'a long enough password', role: 'admin' }, '1.1.1.1');
+  assert.equal(u.role, 'viewer', 'a role in the request is ignored');
+  await assert.rejects(auth.signup({ email: 'new@example.com', name: 'New', password: 'a long enough password' }, '2.2.2.2'), e => e.code === 'email_taken');
+  await auth.signup({ email: 'two@example.com', name: 'Two', password: 'a long enough password' }, '1.1.1.1');
+  await assert.rejects(auth.signup({ email: 'three@example.com', name: 'Three', password: 'a long enough password' }, '1.1.1.1'), e => e.code === 'signup_limited');
+  const s = await auth.login('new@example.com', 'a long enough password', '1.1.1.1');
+  assert.equal(s.user.role, 'viewer');
+});
+
+test('setRole: admin can promote, not self, not the last admin', async () => {
+  const { auth } = mk();
+  const admin = await auth.setup(good);
+  const v = await auth.signup({ email: 'v@example.com', name: 'V', password: 'a long enough password' });
+  assert.equal((await auth.setRole(v.id, 'approver', admin.id)).role, 'approver');
+  await assert.rejects(auth.setRole(v.id, 'root', admin.id), e => e.code === 'invalid_role');
+  await assert.rejects(auth.setRole(admin.id, 'viewer', admin.id), e => e.code === 'self_role');
+  const second = await auth.setRole(v.id, 'admin', admin.id);
+  assert.equal(second.role, 'admin');
+  await auth.setRole(admin.id, 'viewer', v.id);
+  await assert.rejects(auth.setRole(v.id, 'viewer', admin.id), e => e.code === 'self_role' || e.code === 'last_admin');
+});
