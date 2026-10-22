@@ -34,6 +34,7 @@ export function createMemoryAuthStore() {
     async getUser(id) { const x = users.get(id); return x ? { ...x } : null; },
     async listUsers() { return [...users.values()].sort((a, b) => a.created_at.localeCompare(b.created_at)).map(x => ({ ...x })); },
     async deleteUser(id) { users.delete(id); for (const [k, s] of sessions) if (s.user_id === id) sessions.delete(k); },
+    async setRole(id, role) { const x = users.get(id); if (x) x.role = role; },
     async createSession(s) { sessions.set(s.token_hash, { ...s }); },
     async getSession(tokenHash) { const s = sessions.get(tokenHash); return s ? { ...s } : null; },
     async deleteSession(tokenHash) { sessions.delete(tokenHash); },
@@ -56,6 +57,7 @@ export async function createPostgresAuthStore(pool) {
     async getUser(id) { return toUser((await pool.query('SELECT * FROM users WHERE id = $1', [id])).rows[0]) || null; },
     async listUsers() { return (await pool.query('SELECT * FROM users ORDER BY created_at')).rows.map(toUser); },
     async deleteUser(id) { await pool.query('DELETE FROM users WHERE id = $1', [id]); },
+    async setRole(id, role) { await pool.query('UPDATE users SET role = $2 WHERE id = $1', [id, role]); },
     async createSession(s) { await pool.query('INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)', [s.token_hash, s.user_id, s.expires_at]); },
     async getSession(h) { const r = (await pool.query('SELECT * FROM sessions WHERE token_hash = $1', [h])).rows[0]; return r ? { token_hash: r.token_hash, user_id: r.user_id, expires_at: Number(r.expires_at) } : null; },
     async deleteSession(h) { await pool.query('DELETE FROM sessions WHERE token_hash = $1', [h]); },
@@ -67,8 +69,9 @@ export async function createPostgresAuthStore(pool) {
  * Accounts, sessions and roles. Sessions are random 32-byte tokens; only their SHA-256 is stored, so a database leak
  * does not hand out live sessions. Failed logins are throttled per email and per address.
  */
-export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxFailures = 5, lockMinutes = 15 } = {}) {
+export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxFailures = 5, lockMinutes = 15, signupsPerHour = 5 } = {}) {
   const failures = new Map();
+  const signups = new Map();
   const key = (email, ip) => `${email}|${ip}`;
   const locked = k => { const f = failures.get(k); return f && f.count >= maxFailures && now() - f.last < lockMinutes * 60_000; };
   const fail = k => { const f = failures.get(k); const fresh = !f || now() - f.last >= lockMinutes * 60_000; failures.set(k, { count: fresh ? 1 : f.count + 1, last: now() }); };
@@ -92,6 +95,23 @@ export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxF
     /** The first account becomes the admin. Refused once any user exists. */
     async setup(input) { if ((await db.countUsers()) > 0) throw new AuthError('already_set_up', 'an administrator already exists'); return create({ ...input, role: 'admin' }); },
     createUser: create,
+    /** Self-service sign-up. Always a viewer: it can read, never decide. An administrator can raise the role later. */
+    async signup(input, ip = 'unknown') {
+      if ((await db.countUsers()) === 0) throw new AuthError('needs_setup', 'create the administrator first');
+      const recent = (signups.get(ip) || []).filter(t => now() - t < 3600_000);
+      if (recent.length >= signupsPerHour) throw new AuthError('signup_limited', 'too many sign-ups from this address; try again in an hour');
+      const user = await create({ ...input, role: 'viewer' });
+      recent.push(now()); signups.set(ip, recent);
+      return user;
+    },
+    async setRole(id, role, byId) {
+      if (!ROLES.includes(role)) throw new AuthError('invalid_role', `role must be one of ${ROLES.join(', ')}`);
+      if (id === byId) throw new AuthError('self_role', 'you cannot change your own role');
+      const target = await db.getUser(id); if (!target) throw new AuthError('not_found', 'user not found');
+      if (target.role === 'admin' && role !== 'admin' && (await db.listUsers()).filter(u => u.role === 'admin').length < 2) throw new AuthError('last_admin', 'there must be at least one administrator');
+      await db.setRole(id, role);
+      return publicUser(await db.getUser(id));
+    },
     async login(email, password, ip = 'unknown') {
       const e = normaliseEmail(email); const k = key(e, ip);
       if (locked(k)) throw new AuthError('locked', `too many failed attempts; try again in ${lockMinutes} minutes`);
