@@ -29,7 +29,7 @@ export function createMemoryAuthStore() {
   const users = new Map(); const sessions = new Map();
   return {
     async countUsers() { return users.size; },
-    async createUser(u) { for (const x of users.values()) if (x.email === u.email) throw new AuthError('email_taken', 'that email already has an account'); const row = { ...u, created_at: new Date().toISOString() }; users.set(u.id, row); return { ...row }; },
+    async createUser(u) { for (const x of users.values()) if (x.email === u.email) throw new AuthError('email_taken', 'That email already has an account.'); const row = { ...u, created_at: new Date().toISOString() }; users.set(u.id, row); return { ...row }; },
     async getUserByEmail(email) { for (const x of users.values()) if (x.email === email) return { ...x }; return null; },
     async getUser(id) { const x = users.get(id); return x ? { ...x } : null; },
     async listUsers() { return [...users.values()].sort((a, b) => a.created_at.localeCompare(b.created_at)).map(x => ({ ...x })); },
@@ -51,7 +51,7 @@ export async function createPostgresAuthStore(pool) {
     async countUsers() { return Number((await pool.query('SELECT count(*) FROM users')).rows[0].count); },
     async createUser(u) {
       try { return toUser((await pool.query('INSERT INTO users (id,email,name,role,password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING *', [u.id, u.email, u.name, u.role, u.password_hash])).rows[0]); }
-      catch (e) { if (e.code === '23505') throw new AuthError('email_taken', 'that email already has an account'); throw e; }
+      catch (e) { if (e.code === '23505') throw new AuthError('email_taken', 'That email already has an account.'); throw e; }
     },
     async getUserByEmail(email) { return toUser((await pool.query('SELECT * FROM users WHERE email = $1', [email])).rows[0]) || null; },
     async getUser(id) { return toUser((await pool.query('SELECT * FROM users WHERE id = $1', [id])).rows[0]) || null; },
@@ -78,11 +78,11 @@ export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxF
 
   function validate({ email, name, password, role }) {
     const e = normaliseEmail(email);
-    if (!EMAIL.test(e)) throw new AuthError('invalid_email', 'enter a valid email address');
+    if (!EMAIL.test(e)) throw new AuthError('invalid_email', 'Enter a valid email address.');
     const n = String(name ?? '').trim();
-    if (n.length < 1 || n.length > 80) throw new AuthError('invalid_name', 'name must be 1 to 80 characters');
-    if (typeof password !== 'string' || password.length < 10 || password.length > 200) throw new AuthError('weak_password', 'password must be 10 to 200 characters');
-    if (!ROLES.includes(role)) throw new AuthError('invalid_role', `role must be one of ${ROLES.join(', ')}`);
+    if (n.length < 1 || n.length > 80) throw new AuthError('invalid_name', 'Name must be 1 to 80 characters.');
+    if (typeof password !== 'string' || password.length < 10 || password.length > 200) throw new AuthError('weak_password', 'Password must be 10 to 200 characters.');
+    if (!ROLES.includes(role)) throw new AuthError('invalid_role', `Role must be one of ${ROLES.join(', ')}.`);
     return { email: e, name: n };
   }
   async function create(input) {
@@ -93,32 +93,32 @@ export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxF
     ROLES,
     async needsSetup() { return (await db.countUsers()) === 0; },
     /** The first account becomes the admin. Refused once any user exists. */
-    async setup(input) { if ((await db.countUsers()) > 0) throw new AuthError('already_set_up', 'an administrator already exists'); return create({ ...input, role: 'admin' }); },
+    async setup(input) { if ((await db.countUsers()) > 0) throw new AuthError('already_set_up', 'An administrator already exists.'); return create({ ...input, role: 'admin' }); },
     createUser: create,
     /** Self-service sign-up. Always a viewer: it can read, never decide. An administrator can raise the role later. */
     async signup(input, ip = 'unknown') {
-      if ((await db.countUsers()) === 0) throw new AuthError('needs_setup', 'create the administrator first');
+      if ((await db.countUsers()) === 0) throw new AuthError('needs_setup', 'Create the administrator first.');
       const recent = (signups.get(ip) || []).filter(t => now() - t < 3600_000);
-      if (recent.length >= signupsPerHour) throw new AuthError('signup_limited', 'too many sign-ups from this address; try again in an hour');
+      if (recent.length >= signupsPerHour) throw new AuthError('signup_limited', 'Too many sign-ups from this address. Try again in an hour.');
       const user = await create({ ...input, role: 'viewer' });
       recent.push(now()); signups.set(ip, recent);
       return user;
     },
     async setRole(id, role, byId) {
-      if (!ROLES.includes(role)) throw new AuthError('invalid_role', `role must be one of ${ROLES.join(', ')}`);
-      if (id === byId) throw new AuthError('self_role', 'you cannot change your own role');
-      const target = await db.getUser(id); if (!target) throw new AuthError('not_found', 'user not found');
-      if (target.role === 'admin' && role !== 'admin' && (await db.listUsers()).filter(u => u.role === 'admin').length < 2) throw new AuthError('last_admin', 'there must be at least one administrator');
+      if (!ROLES.includes(role)) throw new AuthError('invalid_role', `Role must be one of ${ROLES.join(', ')}.`);
+      if (id === byId) throw new AuthError('self_role', 'You cannot change your own role.');
+      const target = await db.getUser(id); if (!target) throw new AuthError('not_found', 'User not found.');
+      if (target.role === 'admin' && role !== 'admin' && (await db.listUsers()).filter(u => u.role === 'admin').length < 2) throw new AuthError('last_admin', 'There must be at least one administrator.');
       await db.setRole(id, role);
       return publicUser(await db.getUser(id));
     },
     async login(email, password, ip = 'unknown') {
       const e = normaliseEmail(email); const k = key(e, ip);
-      if (locked(k)) throw new AuthError('locked', `too many failed attempts; try again in ${lockMinutes} minutes`);
+      if (locked(k)) throw new AuthError('locked', `Too many failed attempts. Try again in ${lockMinutes} minutes.`);
       const user = await db.getUserByEmail(e);
       // Verify against a dummy hash when the user is unknown so timing does not reveal which emails exist.
       const ok = await verifyPassword(String(password ?? ''), user ? user.password_hash : DUMMY);
-      if (!user || !ok) { fail(k); throw new AuthError('bad_credentials', 'email or password is wrong'); }
+      if (!user || !ok) { fail(k); throw new AuthError('bad_credentials', 'Email or password is wrong.'); }
       failures.delete(k);
       const token = randomBytes(32).toString('base64url');
       await db.createSession({ token_hash: sha(token), user_id: user.id, expires_at: now() + sessionHours * 3600_000 });
@@ -134,9 +134,9 @@ export function createAuth({ db, now = () => Date.now(), sessionHours = 12, maxF
     async logout(token) { if (token) await db.deleteSession(sha(token)); },
     async listUsers() { return (await db.listUsers()).map(publicUser); },
     async deleteUser(id, byId) {
-      if (id === byId) throw new AuthError('self_delete', 'you cannot delete your own account');
-      const target = await db.getUser(id); if (!target) throw new AuthError('not_found', 'user not found');
-      if (target.role === 'admin' && (await db.listUsers()).filter(u => u.role === 'admin').length < 2) throw new AuthError('last_admin', 'there must be at least one administrator');
+      if (id === byId) throw new AuthError('self_delete', 'You cannot delete your own account.');
+      const target = await db.getUser(id); if (!target) throw new AuthError('not_found', 'User not found.');
+      if (target.role === 'admin' && (await db.listUsers()).filter(u => u.role === 'admin').length < 2) throw new AuthError('last_admin', 'There must be at least one administrator.');
       await db.deleteUser(id);
     },
     can(user, role) { return !!user && RANK[user.role] >= RANK[role]; },

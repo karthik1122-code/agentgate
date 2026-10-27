@@ -57,6 +57,13 @@ function authScreen(mode = 'login') {
   form.addEventListener('submit', async e => {
     e.preventDefault(); err.textContent = '';
     const v = id => ($(id) ? $(id).value : undefined);
+    // Check the form first, so an empty field gets a clear message instead of a server error.
+    const bad = (named && !v('name').trim() && ['name', 'Enter your name.'])
+      || (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email').trim()) && ['email', 'Enter a valid email address.'])
+      || (!v('password') && ['password', 'Enter your password.'])
+      || (named && v('password').length < 10 && ['password', 'Use a password of 10 characters or more.'])
+      || ($('setupToken') && !v('setupToken') && ['setupToken', 'Enter the setup token from the server settings.']);
+    if (bad) { err.textContent = bad[1]; $(bad[0]).focus(); return; }
     try {
       await api(setup ? '/api/auth/setup' : signup ? '/api/auth/signup' : '/api/auth/login', { method: 'POST', body: { name: v('name'), email: v('email'), password: v('password'), setupToken: v('setupToken') } });
       await boot();

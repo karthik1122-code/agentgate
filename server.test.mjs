@@ -182,3 +182,13 @@ test('accounts mode: visitors can sign up as viewers, an admin can promote them,
     assert.equal((await post('/api/auth/signup', { email: 'x@example.com', name: 'X', password: 'password-password' }, J)).status, 401, 'closed sign-up falls through to sign-in required');
   } finally { await stop(); }
 });
+
+test('stats count denied calls', async () => {
+  await start({});
+  try {
+    await post('/api/runs', { scenario: 'path-traversal' });
+    const stats = await (await fetch(`${base}/api/stats`)).json();
+    assert.ok(stats.deny >= 1, 'denied calls should be counted');
+    assert.equal(stats.deny, stats.stopped);
+  } finally { await stop(); }
+});
