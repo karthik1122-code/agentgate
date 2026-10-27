@@ -8,6 +8,8 @@ export class GateError extends Error { constructor(code, message) { super(messag
 
 const DEFAULT_LIMITS = { maxCalls: 25, maxDenials: 3, maxArgsBytes: 8192, approvalTtlSeconds: 900, requireDifferentApprover: true };
 const TERMINAL = new Set(['completed', 'aborted']);
+/** Runs driven by an outside agent over the API. The agent proposes each call itself; there is no planner to ask. */
+export const EXTERNAL = 'external';
 const clip = (v, n = 1000) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > n ? s.slice(0, n) + '…' : s; };
 
 /**
@@ -134,6 +136,7 @@ export function createRuntime({ store, policy, planners = {}, world, tools = TOO
       } catch (error) { if (error instanceof ConflictError) continue; throw error; }
       const orphan = state.calls.find(c => c.state === 'proposed' && !c.args);
       if (orphan) { await append(runId, state, 'call_denied', { call_id: orphan.id, source: 'validation', reason: 'proposal was interrupted before it was checked' }); continue; }
+      if (state.planner === EXTERNAL) return state; // idle until the agent sends its next call
       const planner = planners[state.planner];
       if (!planner) return abort(runId, state, `unknown planner "${state.planner}"`);
       const next = await planner.next({ input: state.input, history: state.history });
@@ -150,7 +153,7 @@ export function createRuntime({ store, policy, planners = {}, world, tools = TOO
   return {
     limits, policyHash,
     async startRun({ planner, input = {}, actor }) {
-      if (!planners[planner]) throw new GateError('unknown_planner', `Unknown planner "${planner}"`);
+      if (planner !== EXTERNAL && !planners[planner]) throw new GateError('unknown_planner', `Unknown planner "${planner}"`);
       if (!actor || typeof actor !== 'string' || actor.length > 100) throw new GateError('invalid_actor', 'actor is required');
       const id = `run_${randomUUID().slice(0, 8)}`;
       await store.createRun({ id, planner, input, actor, status: 'running' });
@@ -159,6 +162,32 @@ export function createRuntime({ store, policy, planners = {}, world, tools = TOO
       return drive(id);
     },
     drive,
+    /**
+     * An outside agent proposes one call on its own run. The gate validates it, applies the policy and either
+     * executes it, denies it, or holds it for a person. Returns the run state and the call as recorded.
+     */
+    async submitCall(runId, proposal) {
+      const state = await refold(runId);
+      if (!state.planner) throw new GateError('not_found', 'run not found');
+      if (state.planner !== EXTERNAL) throw new GateError('not_external', 'this run is driven by a built-in planner');
+      if (TERMINAL.has(state.status)) throw new GateError('run_closed', `run is ${state.status}`);
+      if (state.status === 'waiting_approval') throw new GateError('busy', 'a call on this run is waiting for a person; wait for that decision first');
+      if (state.callCount >= limits.maxCalls) { await abort(runId, state, 'max_calls_exceeded'); throw new GateError('run_closed', 'the run reached its call limit and was stopped'); }
+      try { await propose(runId, state, proposal); }
+      catch (error) { if (error instanceof ConflictError) throw new GateError('busy', 'another call on this run was sent at the same moment; retry'); throw error; }
+      const after = await drive(runId);
+      return { state: after, call: after.calls.at(-1) };
+    },
+    /** An outside agent says it is finished. */
+    async completeRun(runId, result) {
+      const state = await refold(runId);
+      if (!state.planner) throw new GateError('not_found', 'run not found');
+      if (state.planner !== EXTERNAL) throw new GateError('not_external', 'this run is driven by a built-in planner');
+      if (state.status !== 'running') throw new GateError(TERMINAL.has(state.status) ? 'run_closed' : 'busy', `run is ${state.status}`);
+      try { await append(runId, state, 'run_completed', { result: clip(result ?? null, 500) }, 'completed'); }
+      catch (error) { if (error instanceof ConflictError) throw new GateError('busy', 'the run changed; retry'); throw error; }
+      return refold(runId);
+    },
     /** Approve or reject a pending call. `hash` must be the call hash the approver was shown. */
     async decide(runId, callId, { by, decision, hash, note }) {
       if (!['approve', 'reject'].includes(decision)) throw new GateError('invalid_decision', 'decision must be approve or reject');

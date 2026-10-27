@@ -2,7 +2,7 @@
 
 A policy gate and approval runtime for AI agent tool calls. An agent proposes a call. AgentGate canonicalises it, judges it against a JSON policy (default **deny**), asks a human when the policy says so, executes it at most once, and records every step in a hash-chained log.
 
-The agents in this repo are **scripted** (`src/scenarios.mjs`), not language models. The product is the gate. A model-driven planner would implement the same `next({ input, history })` interface; that is not built yet. The world (files, outbox, refund ledger, commands) is simulated: nothing sends email, moves money or runs a shell.
+The product is the gate. The dashboard's demo agents are **scripted** (`src/scenarios.mjs`) so every run is reproducible. A real model can drive it too: `examples/agent.mjs` lets Gemini plan the calls with function calling, and every call it proposes goes through the same gate (see *Try it with an agent* below). The world (files, outbox, refund ledger, commands) is simulated: nothing sends email, moves money or runs a shell.
 
 ## Run it
 
@@ -11,7 +11,8 @@ npm install
 npm start                 # http://localhost:4200, in-memory store; the first visit creates the administrator
 DATABASE_URL=postgres://... npm start   # durable runs, accounts and sessions in Postgres
 AUTH=off npm start        # local demo only: no sign-in, anyone can approve
-npm test                  # 75 tests (plus the Postgres store tests when TEST_DATABASE_URL is set)
+npm test                  # 87 tests (plus the Postgres store tests when TEST_DATABASE_URL is set)
+npm run test:e2e          # browser journey: set up, run an agent, approve the held call, check the log, phone layout
 npm run adversarial       # prints the table below
 ```
 
@@ -49,9 +50,9 @@ Lost the administrator password? Run `DATABASE_URL="..." npm run reset-admin` ag
 |---|---|
 | viewer | read approvals, runs and policy |
 | approver | also start runs, dry-run calls, approve and reject |
-| admin | also manage people and reset the sandbox |
+| admin | also manage people and agent keys, and reset the sandbox |
 
-The approver recorded in the log is the signed-in user's email. A name sent by the browser is ignored. Passwords are hashed with scrypt, sessions are random tokens stored only as SHA-256 hashes, cookies are `HttpOnly; SameSite=Strict` (and `Secure` over HTTPS), every change needs a custom `x-ag-csrf` header, and repeated failed logins lock that email and address for 15 minutes.
+The approver recorded in the log is the signed-in user's email. A name sent by the browser is ignored. Passwords are hashed with scrypt, sessions are random tokens stored only as SHA-256 hashes, cookies are `HttpOnly; SameSite=Strict` (and `Secure` over HTTPS), every change needs a custom `x-ag-csrf` header, and repeated failed logins lock that email and address for 15 minutes. The failure counts are stored in Postgres, so a restart or a second instance does not reset them.
 
 ## What it guarantees (and the test for each)
 
@@ -108,20 +109,40 @@ GEMINI_API_KEY=... node examples/agent.mjs --task "Refund pay_AB12CD34 for 500 r
 
 Add `--ask` in a terminal to approve held calls yourself. What you see in the prompt-injection run: the harmless read runs, the email to an outside address is held, the read of `secrets/.env` is denied. In the salami run, small refunds go through until the per-run total passes ₹2,000, then every further refund is held.
 
-The Gemini path is covered by a test with a mocked API (request shape and result feedback). Live model behaviour varies and is not measured here.
+The Gemini path is covered by tests with a mocked API: request shape, result feedback, retries on 503/429 with an optional `GEMINI_FALLBACK_MODEL`, no retry on a bad request, a 30-second timeout per model call, and several tool calls in one model turn (each one is checked by the gate, and all results go back to the model together, as the API requires). Live model behaviour varies and is not measured here.
+
+## Connect your own agent (saved runs and approvals)
+
+An admin creates an **agent key** under **Team**. The full key is shown once and only its SHA-256 is stored. With it, an agent running anywhere can open a run and send each tool call it wants to make. Every call is validated, checked against the policy and written to the run's hash-chained log, exactly like the built-in scenarios. Calls the policy holds appear under **Approvals** for a signed-in person to decide.
+
+| Method | Path (send `Authorization: Bearer agk_...`) | What it does |
+|---|---|---|
+| POST | `/api/v1/runs` | Start a run. `{ input }` is optional |
+| POST | `/api/v1/runs/:id/calls` | `{ tool, args }`. Reply `200` with `executed` or `denied`, or `202` with `waiting_for_approval` |
+| GET | `/api/v1/runs/:id/calls/:callId` | Check a held call: `waiting_for_approval`, `executed`, `rejected` or `expired` |
+| GET | `/api/v1/runs/:id` | The run's status and every call |
+| POST | `/api/v1/runs/:id/complete` | Finish the run |
+
+A key only sees runs it started, cannot send a new call while one is waiting for a person, and has no way to approve. Revoking a key stops it at once. `examples/external-agent.mjs` is a 50-line client:
+
+```bash
+AGENTGATE_URL=http://localhost:4200 AGENTGATE_KEY=agk_... node examples/external-agent.mjs
+```
 
 ## Honest limits
 
 - Secret detection is regex-based. It catches common key and private-key shapes, not arbitrary secrets.
 - The ReDoS guard on patterns is a heuristic.
 - An email to an internal address can still carry sensitive content; the content check is the same regexes.
-- Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person.
-- Login throttling is in memory, so it resets on restart and is per server instance.
+- Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person; a lost administrator password is reset on the server with `npm run reset-admin`.
+- The sign-up limit per address (5 an hour) is still kept in memory; the login lock is in Postgres.
 - `AUTH=off` has no identity at all and must never be exposed publicly.
 - The agent example can use a real model (Gemini), but the adversarial suite uses scripted planners, so nothing here measures how often a real model falls for prompt injection.
+- `examples/agent.mjs` asks the stateless gate (`/api/play/check`), so the calls it holds are not saved. Outside agents that need saved runs and real approvals use the agent-key API above.
+- Tools still run against the simulated world. The agent API decides and records; connecting a real refund or email provider means writing that tool's `run` function.
 - Truncating the newest records of a log is not detectable without an externally stored head hash. The chain detects edits and deletions in the middle.
 - The tool set is five simulated tools. Real tools need their own validators.
 
 ## Layout
 
-`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `examples/agent.mjs` agent demo · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.
+`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `examples/agent.mjs` agent demo · `examples/external-agent.mjs` agent-key API client · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.

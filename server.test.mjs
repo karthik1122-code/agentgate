@@ -182,3 +182,69 @@ test('accounts mode: visitors can sign up as viewers, an admin can promote them,
     assert.equal((await post('/api/auth/signup', { email: 'x@example.com', name: 'X', password: 'password-password' }, J)).status, 401, 'closed sign-up falls through to sign-in required');
   } finally { await stop(); }
 });
+
+test('stats count denied calls', async () => {
+  await start({});
+  try {
+    await post('/api/runs', { scenario: 'path-traversal' });
+    const stats = await (await fetch(`${base}/api/stats`)).json();
+    assert.ok(stats.deny >= 1, 'denied calls should be counted');
+    assert.equal(stats.deny, stats.stopped);
+  } finally { await stop(); }
+});
+
+test('outside agents: a key starts its own run, calls are allowed, held or denied, and a person approves', async () => {
+  await start({});
+  try {
+    const created = await (await post('/api/agent-keys', { name: 'support bot' })).json();
+    assert.match(created.key, /^agk_/);
+    const listed = await (await fetch(`${base}/api/agent-keys`)).json();
+    assert.equal(listed[0].name, 'support bot');
+    assert.equal(listed[0].key, undefined, 'the full key is shown only once');
+
+    const agent = (path, body, key = created.key) => fetch(`${base}/api/v1${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    assert.equal((await agent('/runs', {}, 'agk_wrongwrongwrongwrongwrong')).status, 401);
+    assert.equal((await fetch(`${base}/api/v1/runs`, { method: 'POST' })).status, 401);
+
+    const run = await (await agent('/runs', { input: { ticket: 'T-1' } })).json();
+    assert.equal(run.status, 'running');
+
+    const read = await (await agent(`/runs/${run.runId}/calls`, { tool: 'read_file', args: { path: 'workspace/report.md' } })).json();
+    assert.equal(read.call.status, 'executed');
+    assert.ok(read.call.result);
+
+    const secret = await (await agent(`/runs/${run.runId}/calls`, { tool: 'read_file', args: { path: 'secrets/.env' } })).json();
+    assert.equal(secret.call.status, 'denied');
+
+    const bigRes = await agent(`/runs/${run.runId}/calls`, { tool: 'refund_payment', args: { payment_id: 'pay_EF56GH78', amount: 500000, currency: 'INR' } });
+    assert.equal(bigRes.status, 202);
+    const big = await bigRes.json();
+    assert.equal(big.call.status, 'waiting_for_approval');
+    // While a call waits for a person, the agent cannot pile on more calls.
+    assert.equal((await agent(`/runs/${run.runId}/calls`, { tool: 'read_file', args: { path: 'workspace/report.md' } })).status, 409);
+    // The agent's key cannot approve: decisions live behind a signed-in person, not the agent API.
+    assert.equal((await agent(`/runs/${run.runId}/calls/${big.call.id}/decision`, { decision: 'approve', hash: big.call.hash })).status, 404);
+
+    const ok = await post(`/api/runs/${run.runId}/calls/${big.call.id}/decision`, { by: 'human:lead', decision: 'approve', hash: big.call.hash });
+    assert.equal(ok.status, 200);
+    const after = await (await agent(`/runs/${run.runId}/calls/${big.call.id}`)).json();
+    assert.equal(after.call.status, 'executed');
+    assert.equal(after.call.approval.by, 'human:lead');
+
+    const done = await (await agent(`/runs/${run.runId}/complete`, { result: 'refunds handled' })).json();
+    assert.equal(done.status, 'completed');
+    assert.equal((await agent(`/runs/${run.runId}/calls`, { tool: 'read_file', args: { path: 'workspace/report.md' } })).status, 409);
+    const v = await (await fetch(`${base}/api/runs/${run.runId}`)).json();
+    assert.equal(v.integrity.valid, true, 'outside agent runs are hash-chained like any other');
+
+    // A second key cannot see the first key's run, and a revoked key stops working.
+    const other = await (await post('/api/agent-keys', { name: 'other bot' })).json();
+    assert.equal((await agent(`/runs/${run.runId}`, undefined, other.key)).status, 404);
+    assert.equal((await fetch(`${base}/api/agent-keys/${other.id}`, { method: 'DELETE', headers: { 'x-ag-csrf': '1' } })).status, 200);
+    assert.equal((await agent('/runs', {}, other.key)).status, 401);
+  } finally { await stop(); }
+});

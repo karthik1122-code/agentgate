@@ -42,8 +42,20 @@ export function mockPlanner(calls) {
   return { next: async () => (i < calls.length ? { tool: calls[i].tool, args: calls[i++].args } : null), feed: () => {} };
 }
 
-/** A planner backed by Gemini function calling over plain REST. */
-export function geminiPlanner({ task, tools, key = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || 'gemini-3.8-flash' }) {
+/**
+ * A planner backed by Gemini function calling over plain REST.
+ * - Retries 429 and 5xx answers with backoff, then tries `fallbackModel` (GEMINI_FALLBACK_MODEL) if set.
+ * - Gives up on one model call after `timeoutMs`.
+ * - When the model asks for several tools in one turn, they are proposed to the gate one by one, and every
+ *   result goes back to the model in a single turn, as the function-calling API requires.
+ */
+export function geminiPlanner({
+  task, tools,
+  key = process.env.GEMINI_API_KEY,
+  model = process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  fallbackModel = process.env.GEMINI_FALLBACK_MODEL || '',
+  attempts = 3, retryDelayMs = 600, timeoutMs = 30_000,
+}) {
   if (!key) throw new Error('Set GEMINI_API_KEY, or use --mock <scenario> to run without a key.');
   const declarations = Object.entries(tools).map(([name, t]) => ({
     name, description: t.description,
@@ -54,23 +66,44 @@ export function geminiPlanner({ task, tools, key = process.env.GEMINI_API_KEY, m
     },
   }));
   const contents = [{ role: 'user', parts: [{ text: task }] }];
-  let pending = null;
+  const queue = []; let asked = []; let answers = [];
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function ask() {
+    const body = JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools: [{ functionDeclarations: declarations }] });
+    let last;
+    for (const m of [model, fallbackModel].filter(Boolean)) {
+      for (let i = 0; i < attempts; i += 1) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body, signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (r.ok) return r.json();
+        last = new Error(`Gemini returned ${r.status}: ${(await r.text()).slice(0, 200)}`);
+        if (r.status !== 429 && r.status < 500) throw last; // a bad request will not get better by retrying
+        if (i < attempts - 1) await sleep(retryDelayMs * 2 ** i);
+      }
+    }
+    throw last;
+  }
+
   return {
     async next() {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools: [{ functionDeclarations: declarations }] }),
-      });
-      if (!r.ok) throw new Error(`Gemini returned ${r.status}: ${(await r.text()).slice(0, 200)}`);
-      const content = (await r.json()).candidates?.[0]?.content;
-      if (!content) return null;
-      contents.push(content);
-      const fc = content.parts?.find(p => p.functionCall)?.functionCall;
-      if (!fc) { return { say: content.parts?.map(p => p.text).filter(Boolean).join(' ') || '' }; }
-      pending = fc.name;
+      if (!queue.length) {
+        const content = (await ask()).candidates?.[0]?.content;
+        if (!content) return null;
+        contents.push(content);
+        const calls = (content.parts || []).filter(p => p.functionCall).map(p => p.functionCall);
+        if (!calls.length) return { say: content.parts?.map(p => p.text).filter(Boolean).join(' ') || '' };
+        queue.push(...calls); asked = []; answers = [];
+      }
+      const fc = queue.shift();
+      asked.push(fc.name);
       return { tool: fc.name, args: fc.args || {} };
     },
-    feed(result) { contents.push({ role: 'user', parts: [{ functionResponse: { name: pending, response: result } }] }); },
+    feed(result) {
+      answers.push({ functionResponse: { name: asked[answers.length], response: result } });
+      if (!queue.length) contents.push({ role: 'user', parts: answers });
+    },
   };
 }
 
