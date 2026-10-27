@@ -2,7 +2,7 @@
 
 A policy gate and approval runtime for AI agent tool calls. An agent proposes a call. AgentGate canonicalises it, judges it against a JSON policy (default **deny**), asks a human when the policy says so, executes it at most once, and records every step in a hash-chained log.
 
-The agents in this repo are **scripted** (`src/scenarios.mjs`), not language models. The product is the gate. A model-driven planner would implement the same `next({ input, history })` interface; that is not built yet. The world (files, outbox, refund ledger, commands) is simulated: nothing sends email, moves money or runs a shell.
+The product is the gate. The dashboard's demo agents are **scripted** (`src/scenarios.mjs`) so every run is reproducible. A real model can drive it too: `examples/agent.mjs` lets Gemini plan the calls with function calling, and every call it proposes goes through the same gate (see *Try it with an agent* below). The world (files, outbox, refund ledger, commands) is simulated: nothing sends email, moves money or runs a shell.
 
 ## Run it
 
@@ -11,7 +11,8 @@ npm install
 npm start                 # http://localhost:4200, in-memory store; the first visit creates the administrator
 DATABASE_URL=postgres://... npm start   # durable runs, accounts and sessions in Postgres
 AUTH=off npm start        # local demo only: no sign-in, anyone can approve
-npm test                  # 75 tests (plus the Postgres store tests when TEST_DATABASE_URL is set)
+npm test                  # 87 tests (plus the Postgres store tests when TEST_DATABASE_URL is set)
+npm run test:e2e          # browser journey: set up, run an agent, approve the held call, check the log, phone layout
 npm run adversarial       # prints the table below
 ```
 
@@ -108,17 +109,18 @@ GEMINI_API_KEY=... node examples/agent.mjs --task "Refund pay_AB12CD34 for 500 r
 
 Add `--ask` in a terminal to approve held calls yourself. What you see in the prompt-injection run: the harmless read runs, the email to an outside address is held, the read of `secrets/.env` is denied. In the salami run, small refunds go through until the per-run total passes ₹2,000, then every further refund is held.
 
-The Gemini path is covered by a test with a mocked API (request shape and result feedback). Live model behaviour varies and is not measured here.
+The Gemini path is covered by tests with a mocked API: request shape, result feedback, retries on 503/429 with an optional `GEMINI_FALLBACK_MODEL`, no retry on a bad request, a 30-second timeout per model call, and several tool calls in one model turn (each one is checked by the gate, and all results go back to the model together, as the API requires). Live model behaviour varies and is not measured here.
 
 ## Honest limits
 
 - Secret detection is regex-based. It catches common key and private-key shapes, not arbitrary secrets.
 - The ReDoS guard on patterns is a heuristic.
 - An email to an internal address can still carry sensitive content; the content check is the same regexes.
-- Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person.
+- Accounts are email and password only: no email verification, password reset, SSO or two-factor yet. Lost passwords need an administrator to remove and re-add the person; a lost administrator password is reset on the server with `npm run reset-admin`.
 - Login throttling is in memory, so it resets on restart and is per server instance.
 - `AUTH=off` has no identity at all and must never be exposed publicly.
 - The agent example can use a real model (Gemini), but the adversarial suite uses scripted planners, so nothing here measures how often a real model falls for prompt injection.
+- The agent example asks the stateless gate (`/api/play/check`). Calls it holds are not saved as approvals in the dashboard; connecting outside agents to durable runs (`/api/runs`) is the next step.
 - Truncating the newest records of a log is not detectable without an externally stored head hash. The chain detects edits and deletions in the middle.
 - The tool set is five simulated tools. Real tools need their own validators.
 

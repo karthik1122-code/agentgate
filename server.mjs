@@ -34,7 +34,12 @@ const headers = {
 };
 const play = createPlayHttp(createPlayground(policy));
 const hits = new Map();
-const limited = ip => { const now = Date.now(); const l = (hits.get(ip) || []).filter(t => now - t < 60_000); l.push(now); hits.set(ip, l); return l.length > 240; };
+const limited = ip => {
+  const now = Date.now();
+  // Forget visitors with no request in the last minute, so the map cannot grow without bound.
+  if (hits.size > 5000) for (const [k, v] of hits) if (now - v[v.length - 1] >= 60_000) hits.delete(k);
+  const l = (hits.get(ip) || []).filter(t => now - t < 60_000); l.push(now); hits.set(ip, l); return l.length > 240;
+};
 const send = (res, status, body, extra = {}) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers, ...extra }); res.end(JSON.stringify(body)); };
 const readJson = req => new Promise((resolve, reject) => {
   let size = 0, big = false; const chunks = [];
@@ -67,7 +72,7 @@ async function route(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/auth/me') return send(res, 200, { authEnabled: AUTH_ON, needsSetup: AUTH_ON && await auth.needsSetup(), setupTokenRequired: !!SETUP_TOKEN, signupOpen: SIGNUP_ON, user });
   if (AUTH_ON && req.method === 'POST' && url.pathname === '/api/auth/setup') {
     const body = await readJson(req);
-    if (SETUP_TOKEN && body.setupToken !== SETUP_TOKEN) return send(res, 403, { error: 'invalid_setup_token', message: 'the setup token is wrong' });
+    if (SETUP_TOKEN && body.setupToken !== SETUP_TOKEN) return send(res, 403, { error: 'invalid_setup_token', message: 'The setup token is wrong.' });
     try { await auth.setup(body); const s = await auth.login(body.email, body.password, clientIp(req)); return send(res, 201, { user: s.user }, { 'set-cookie': setCookie(req, s.token, s.maxAge) }); }
     catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }
