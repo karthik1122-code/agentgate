@@ -112,3 +112,25 @@ test('setRole: admin can promote, not self, not the last admin', async () => {
   await auth.setRole(admin.id, 'viewer', v.id);
   await assert.rejects(auth.setRole(v.id, 'viewer', admin.id), e => e.code === 'self_role' || e.code === 'last_admin');
 });
+
+test('failed logins are kept in the auth store, so a new process still sees the lock', async () => {
+  const db = createMemoryAuthStore();
+  const first = createAuth({ db, maxFailures: 3 });
+  await first.setup({ email: 'lock@x.com', name: 'L', password: 'a-long-password' });
+  for (let i = 0; i < 3; i++) await assert.rejects(first.login('lock@x.com', 'wrong-password', '1.1.1.1'), { code: 'bad_credentials' });
+  const restarted = createAuth({ db, maxFailures: 3 }); // same database, fresh process
+  await assert.rejects(restarted.login('lock@x.com', 'a-long-password', '1.1.1.1'), { code: 'locked' });
+});
+
+test('agent keys: shown once, stored hashed, revocable', async () => {
+  const db = createMemoryAuthStore();
+  const a = createAuth({ db });
+  const k = await a.createAgentKey('ci bot', 'u_1');
+  assert.match(k.key, /^agk_/);
+  assert.ok(!(await db.listAgentKeys()).some(x => JSON.stringify(x).includes(k.key)), 'the plain key is never stored');
+  assert.deepEqual(await a.agentFromKey(k.key), { id: k.id, name: 'ci bot' });
+  assert.equal(await a.agentFromKey('agk_' + 'x'.repeat(30)), null);
+  await assert.rejects(a.createAgentKey('<script>'), { code: 'invalid_name' });
+  await a.revokeAgentKey(k.id);
+  assert.equal(await a.agentFromKey(k.key), null);
+});

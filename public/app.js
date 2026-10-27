@@ -233,7 +233,7 @@ async function viewRuns() {
   show(head('Runs', 'Every run is folded from an append-only, hash-chained log. Nothing here is stored as mutable state.'), el('div', { class: 'grid2' }, list, detail));
   if (!runs.length) { list.append(emptyState('runs', 'No runs yet', 'Start one from the Simulator.', el('a', { class: 'btn primary', href: '#sandbox' }, 'Open the simulator'))); return; }
   if (!selectedRun || !runs.some(r => r.id === selectedRun)) selectedRun = runs[0].id;
-  for (const r of runs) list.append(el('button', { class: 'item', type: 'button', 'aria-current': r.id === selectedRun, onclick: () => { selectedRun = r.id; viewRuns(); } }, el('div', { class: 'r1' }, el('b', {}, r.planner), tag(r.status)), el('small', {}, `${r.calls} calls · ${r.denials} denied · ${ago(r.created_at)}`)));
+  for (const r of runs) list.append(el('button', { class: 'item', type: 'button', 'aria-current': r.id === selectedRun, onclick: () => { selectedRun = r.id; viewRuns(); } }, el('div', { class: 'r1' }, el('b', {}, r.planner === 'external' ? r.actor.replace(/^agent:/, '') : r.planner), tag(r.status)), el('small', {}, `${r.calls} calls · ${r.denials} denied · ${ago(r.created_at)}`)));
   const v = await api(`/api/runs/${selectedRun}`);
   const chain = renderTrain(v.events, { verdict: v.integrity, animate: 'run' });
   const tl = el('ol', { class: 'tl' });
@@ -282,15 +282,44 @@ async function viewPolicy() {
 
 /* ---------- team ---------- */
 async function viewTeam() {
-  const users = await api('/api/users');
+  const [users, keys] = await Promise.all([api('/api/users'), api('/api/agent-keys')]);
   const err = el('p', { class: 'err', role: 'alert' });
   const form = el('form', { novalidate: true, class: 'card' }, el('h2', { class: 'mb' }, 'Add a person'),
     ...[['n', 'Name', 'text'], ['e', 'Email', 'email'], ['p', 'Temporary password (10+ characters)', 'password']].map(([id, l, t]) => el('div', { class: 'field' }, el('label', { for: id }, l), el('input', { id, type: t, required: true, autocomplete: 'off' }))),
     el('div', { class: 'field' }, el('label', { for: 'r' }, 'Role'), el('select', { id: 'r' }, el('option', { value: 'viewer' }, 'Viewer: can read'), el('option', { value: 'approver', selected: true }, 'Approver: can decide and run'), el('option', { value: 'admin' }, 'Admin: can also manage people'))),
     err, el('button', { class: 'btn primary', type: 'submit' }, 'Add person'));
   form.addEventListener('submit', async e => { e.preventDefault(); err.textContent = ''; try { await api('/api/users', { method: 'POST', body: { name: $('n').value, email: $('e').value, password: $('p').value, role: $('r').value } }); toast('Person added'); viewTeam(); } catch (x) { err.textContent = x.message; } });
-  show(head('Team', 'Who can see, decide and manage. Every approval in the log carries the approver’s email.'),
-    el('div', { class: 'three' }, el('div', { class: 'card tight scroll' }, el('table', {}, el('thead', {}, el('tr', {}, ['Name', 'Email', 'Role', ''].map(h => el('th', {}, h)))), el('tbody', {}, users.map(u => el('tr', {}, el('td', {}, u.name), el('td', {}, u.email), el('td', {}, u.id === me.user.id ? el('span', { class: 'rule' }, u.role) : el('select', { 'aria-label': `Role for ${u.email}`, onchange: async e => { try { await api(`/api/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }); toast('Role updated'); } catch (x) { toast(x.message, true); viewTeam(); } } }, ['viewer', 'approver', 'admin'].map(r => el('option', { value: r, selected: r === u.role }, r)))), el('td', {}, u.id === me.user.id ? el('span', { class: 'mute' }, 'you') : el('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!confirm(`Remove ${u.email}? Their sessions end immediately.`)) return; try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); toast('Removed'); viewTeam(); } catch (x) { toast(x.message, true); } } }, 'Remove'))))))), form));
+  show(head('Team', 'Who can see, decide and manage, and which outside agents can send calls. Every approval in the log carries the approver’s email.'),
+    el('div', { class: 'three' }, el('div', { class: 'card tight scroll' }, el('table', {}, el('thead', {}, el('tr', {}, ['Name', 'Email', 'Role', ''].map(h => el('th', {}, h)))), el('tbody', {}, users.map(u => el('tr', {}, el('td', {}, u.name), el('td', {}, u.email), el('td', {}, u.id === me.user.id ? el('span', { class: 'rule' }, u.role) : el('select', { 'aria-label': `Role for ${u.email}`, onchange: async e => { try { await api(`/api/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }); toast('Role updated'); } catch (x) { toast(x.message, true); viewTeam(); } } }, ['viewer', 'approver', 'admin'].map(r => el('option', { value: r, selected: r === u.role }, r)))), el('td', {}, u.id === me.user.id ? el('span', { class: 'mute' }, 'you') : el('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!confirm(`Remove ${u.email}? Their sessions end immediately.`)) return; try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); toast('Removed'); viewTeam(); } catch (x) { toast(x.message, true); } } }, 'Remove'))))))), form),
+    agentKeys(keys));
+}
+
+/** Keys that let an outside agent start runs and propose calls over /api/v1. A key can never approve. */
+function agentKeys(keys) {
+  const err = el('p', { class: 'err', role: 'alert' });
+  const fresh = el('div');
+  const form = el('form', { novalidate: true, class: 'card' }, el('h2', { class: 'mb' }, 'New agent key'),
+    el('p', { class: 'mute mb' }, 'An outside agent sends this key to start runs and propose tool calls. It cannot approve anything. Calls that need a person show up under Approvals.'),
+    el('div', { class: 'field' }, el('label', { for: 'kn' }, 'Name'), el('input', { id: 'kn', required: true, maxlength: 40, placeholder: 'support-bot', autocomplete: 'off' })),
+    err, el('button', { class: 'btn primary', type: 'submit' }, 'Create key'), fresh);
+  form.addEventListener('submit', async e => {
+    e.preventDefault(); err.textContent = '';
+    try {
+      const k = await api('/api/agent-keys', { method: 'POST', body: { name: $('kn').value } });
+      $('kn').value = '';
+      const list = await api('/api/agent-keys');
+      $('keytable').replaceWith(keyTable(list));
+      fresh.replaceChildren(el('div', { class: 'mt' }, el('p', {}, el('b', {}, 'Copy this key now. '), 'It is not shown again.'),
+        el('div', { class: 'hashrow mt' }, el('code', { 'aria-label': 'New agent key' }, k.key), el('button', { class: 'btn ghost sm', type: 'button', onclick: () => copy(k.key, 'Key copied') }, icon('copy'), 'Copy'))));
+    } catch (x) { err.textContent = x.message; }
+  });
+  return el('div', { class: 'three mt' }, keyTable(keys), form);
+}
+function keyTable(keys) {
+  const rows = keys.length ? keys.map(k => el('tr', {}, el('td', {}, k.name), el('td', {}, el('code', {}, `${k.prefix}…`)), el('td', {}, k.revoked ? 'revoked' : k.lastUsedAt ? `used ${ago(k.lastUsedAt)}` : 'never used'),
+    el('td', {}, k.revoked ? '' : el('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!confirm(`Revoke ${k.name}? The agent using it stops working immediately.`)) return; try { await api(`/api/agent-keys/${k.id}`, { method: 'DELETE' }); toast('Key revoked'); viewTeam(); } catch (x) { toast(x.message, true); } } }, 'Revoke'))))
+    : [el('tr', {}, el('td', { colspan: 4, class: 'mute' }, 'No agent keys yet. Create one to connect an outside agent.'))];
+  return el('div', { class: 'card tight scroll', id: 'keytable' }, el('h2', { class: 'mb' }, 'Agent keys'), el('table', {}, el('thead', {}, el('tr', {}, ['Name', 'Key', 'Last used', ''].map(h => el('th', {}, h)))), el('tbody', {}, rows)));
 }
 
 /* ---------- command palette ---------- */

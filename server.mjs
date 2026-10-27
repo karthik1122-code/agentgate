@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
-import { createRuntime, GateError } from './src/runtime.mjs';
+import { createRuntime, GateError, EXTERNAL } from './src/runtime.mjs';
 import { createMemoryStore } from './src/store.mjs';
 import { createPostgresStore } from './src/store-pg.mjs';
 import { createAuth, createMemoryAuthStore, createPostgresAuthStore, AuthError } from './src/auth.mjs';
@@ -60,7 +60,7 @@ async function runView(id) {
   return { run: v.run, state: summary(v.state), events: v.events, integrity: verifyChain(v.events) };
 }
 
-const gateStatus = code => ({ not_found: 404, not_pending: 409, already_decided: 409, expired: 410, hash_mismatch: 409, same_actor: 403, invalid_decision: 400, invalid_approver: 400, unknown_planner: 400, invalid_actor: 400 }[code] || 400);
+const gateStatus = code => ({ busy: 409, run_closed: 409, not_external: 409, not_found: 404, not_pending: 409, already_decided: 409, expired: 410, hash_mismatch: 409, same_actor: 403, invalid_decision: 400, invalid_approver: 400, unknown_planner: 400, invalid_actor: 400 }[code] || 400);
 
 async function route(req, res, url) {
   const mutating = req.method !== 'GET' && req.method !== 'HEAD';
@@ -96,6 +96,14 @@ async function route(req, res, url) {
       if (req.method === 'POST' && url.pathname === '/api/users') return send(res, 201, await auth.createUser(await readJson(req)));
       if (req.method === 'PATCH' && url.pathname !== '/api/users') return send(res, 200, await auth.setRole(url.pathname.split('/').pop(), (await readJson(req)).role, user.id));
       if (req.method === 'DELETE') { await auth.deleteUser(url.pathname.split('/').pop(), user.id); return send(res, 200, { ok: true }); }
+    } catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
+  }
+  if (url.pathname === '/api/agent-keys' || /^\/api\/agent-keys\/[\w-]+$/.test(url.pathname)) {
+    if (need('admin')) return true;
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/agent-keys') return send(res, 200, await auth.listAgentKeys());
+      if (req.method === 'POST' && url.pathname === '/api/agent-keys') return send(res, 201, await auth.createAgentKey((await readJson(req)).name, user.id));
+      if (req.method === 'DELETE' && url.pathname !== '/api/agent-keys') { await auth.revokeAgentKey(url.pathname.split('/').pop()); return send(res, 200, { ok: true }); }
     } catch (e) { if (e instanceof AuthError) return send(res, authStatus(e.code), { error: e.code, message: e.message }); throw e; }
   }
   const m = url.pathname.match(/^\/api\/runs\/([\w-]+)(?:\/calls\/(c\d+)\/decision)?$/);
@@ -160,12 +168,58 @@ async function route(req, res, url) {
   return null;
 }
 
+/* ---------- API for outside agents (Authorization: Bearer agk_...) ---------- */
+// No cookies are involved, so no CSRF header is needed. A key only sees runs it started, and can never approve.
+const callView = c => c && ({
+  id: c.id, tool: c.tool, args: c.args ?? null, hash: c.hash ?? null,
+  status: c.state === 'executed' ? 'executed' : c.state === 'pending_approval' ? 'waiting_for_approval' : c.state,
+  reason: c.outcome?.reason ?? c.decision?.reason ?? null,
+  result: c.outcome?.status === 'executed' ? c.outcome.result : undefined,
+  approval: c.approval ? { expiresAt: c.approval.expiresAt, by: c.approval.by ?? null } : undefined,
+});
+const runSummary = state => ({ runId: state.runId, status: state.status, abortReason: state.abortReason, calls: state.calls.length, denials: state.denials });
+async function agentApi(req, res, url) {
+  const m = /^Bearer\s+(\S+)$/.exec(req.headers.authorization || '');
+  const agent = m ? await auth.agentFromKey(m[1]) : null;
+  if (!agent) return send(res, 401, { error: 'invalid_agent_key', message: 'Send an agent key as "Authorization: Bearer agk_...". An admin creates keys on the Agent keys page.' });
+  const actor = `agent:${agent.name} (${agent.id})`;
+  const own = async runId => { const r = await store.getRun(runId); return r && r.planner === EXTERNAL && r.actor === actor ? r : null; };
+  const p = url.pathname.slice('/api/v1'.length);
+  try {
+    if (req.method === 'POST' && p === '/runs') {
+      const { input } = await readJson(req);
+      const state = await runtime.startRun({ planner: EXTERNAL, actor, input: input ?? {} });
+      return send(res, 201, runSummary(state));
+    }
+    const r = p.match(/^\/runs\/([\w-]+)(\/calls(?:\/(c\d+))?|\/complete)?$/);
+    if (!r || !(await own(r[1]))) return send(res, 404, { error: 'not_found' });
+    const [, runId, sub, callId] = r;
+    if (req.method === 'GET' && !sub) { const v = await runtime.view(runId); return send(res, 200, { ...runSummary(v.state), calls: v.state.calls.map(callView) }); }
+    if (req.method === 'POST' && sub === '/calls') {
+      const { tool, args } = await readJson(req);
+      const { state, call } = await runtime.submitCall(runId, { tool, args });
+      return send(res, call.state === 'pending_approval' ? 202 : 200, { run: runSummary(state), call: callView(call) });
+    }
+    if (req.method === 'GET' && callId) {
+      const v = await runtime.view(runId);
+      const call = v.state.calls.find(c => c.id === callId);
+      return call ? send(res, 200, { run: runSummary(v.state), call: callView(call) }) : send(res, 404, { error: 'not_found' });
+    }
+    if (req.method === 'POST' && sub === '/complete') { const { result } = await readJson(req); return send(res, 200, runSummary(await runtime.completeRun(runId, result))); }
+    return send(res, 404, { error: 'not_found' });
+  } catch (error) {
+    if (error instanceof GateError) return send(res, gateStatus(error.code), { error: error.code, message: error.message });
+    throw error;
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (url.pathname.startsWith('/api/')) {
       if (url.pathname.startsWith('/api/play/')) return play(req, res, url.pathname.slice('/api/play/'.length));
       if (limited(clientIp(req))) return send(res, 429, { error: 'rate_limited' });
+      if (url.pathname.startsWith('/api/v1/')) return agentApi(req, res, url);
       const handled = await route(req, res, url);
       if (handled === null) send(res, 404, { error: 'not_found' });
       return;

@@ -155,3 +155,4 @@ td{padding:11px 16px;border-top:1px solid var(--line);vertical-align:top;font-si
 .three.fx .mix i{animation:mixin .8s cubic-bezier(.2,.8,.2,1) .25s both}
 @keyframes mixin{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0)}}
 .card.empty .actions{margin-top:12px}
+.card.tight>h2{padding:18px 20px 4px}
