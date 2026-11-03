@@ -145,4 +145,45 @@ AGENTGATE_URL=http://localhost:4200 AGENTGATE_KEY=agk_... node examples/external
 
 ## Layout
 
-`src/policy.mjs` rules engine · `src/tools.mjs` validation, canonicalisation, simulated tools · `src/runtime.mjs` event-sourced run loop and approvals · `src/chain.mjs` hashing · `src/store.mjs`, `src/store-pg.mjs` storage · `policies/default.json` · `src/auth.mjs` accounts, sessions, roles · `src/play.mjs`, `src/play-http.mjs` public playground · `src/*` + `api/` Vercel functions · `examples/agent.mjs` agent demo · `examples/external-agent.mjs` agent-key API client · `server.mjs` + `public/` landing and dashboard · `EXPLAIN.md` interview prep.
+```
+server.mjs                    Entry: load the policy, pick the store, build runtime + auth, listen
+policies/default.json         The rules: allow, hold for a person, or deny, per tool
+src/                          The gate itself (no HTTP)
+  runtime.mjs                 Event-sourced run loop: propose -> validate -> policy -> execute / hold / deny; approvals; outside-agent runs
+  policy.mjs                  Rules engine
+  tools.mjs                   Argument validation, canonical form, the simulated tools and world
+  chain.mjs                   Hash chain for run logs
+  store.mjs, store-pg.mjs     Run storage: memory or Postgres, one contract
+  auth.mjs                    Accounts, sessions, roles, login lock, agent keys
+  scenarios.mjs               Scripted agents for the demo and tests
+  play.mjs, play-http.mjs     Stateless public playground (also used by the Vercel functions)
+  config.mjs                  Every environment variable in one place
+  http/                       The web layer
+    handler.mjs               /api/play -> playground; /api/v1 -> agent API; /api/* -> CSRF, sign-in, routes; else files
+    respond.mjs               send(), JSON body limits, session cookie, rate limiter
+    errors.mjs                Maps AuthError and GateError codes to HTTP statuses in one place
+    views.mjs                 Response shapes: run view, call view, run summary
+    routes/
+      account.routes.mjs      /api/health, /api/auth/* (public)
+      admin.routes.mjs        /api/users, /api/agent-keys, /api/world/reset (admin)
+      gate.routes.mjs         /api/policy, /api/runs, /api/approvals, /api/stats, decisions
+      agent-api.routes.mjs    /api/v1/* for outside agents (Bearer key)
+      static.routes.mjs       Files from public/ only
+api/                          Vercel functions for the playground
+public/                       Landing page and dashboard
+examples/                     agent.mjs (Gemini or scripted agent), external-agent.mjs (agent-key API client)
+test/, server.test.mjs, e2e/  Unit, store-contract, Postgres, server and browser tests
+```
+
+### Where to change things
+
+| You want to... | Change |
+| --- | --- |
+| Add or change a rule | `policies/default.json` (validated by `src/policy.mjs` at start-up) |
+| Add a tool | `src/tools.mjs`: its fields, validator and `run` function |
+| Change how runs, approvals or expiry work | `src/runtime.mjs` |
+| Add a dashboard API endpoint | `src/http/routes/gate.routes.mjs` or `admin.routes.mjs` |
+| Change the outside-agent API | `src/http/routes/agent-api.routes.mjs` and `views.mjs` |
+| Map a new error code to a status | `src/http/errors.mjs` |
+
+`EXPLAIN.md` is the interview walkthrough.
