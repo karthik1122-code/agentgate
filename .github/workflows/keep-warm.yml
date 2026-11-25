@@ -1,0 +1,17 @@
+# Render's free plan puts a service to sleep after 15 idle minutes, and the next visitor waits ~30 seconds.
+# This pings the AgentGate API every 10 minutes on weekdays, 09:30 to 20:30 IST, when recruiters are most likely to visit.
+# The window is limited on purpose: Render's free plan has a monthly cap on instance hours, shared by all
+# services in the workspace, so three services kept awake around the clock would run out mid-month.
+name: Keep warm
+on:
+  schedule:
+    - cron: "*/10 4-14 * * 1-5"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Ping AgentGate API
+        run: curl --silent --show-error --max-time 90 --retry 2 --output /dev/null --write-out "%{http_code} in %{time_total}s\n" https://agentgate-api-hbbt.onrender.com/api/health
