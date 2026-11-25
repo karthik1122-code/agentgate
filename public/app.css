@@ -153,3 +153,10 @@ td{padding:11px 16px;border-top:1px solid var(--line);vertical-align:top;font-si
 .three.fx .mix i{animation:mixin .8s cubic-bezier(.2,.8,.2,1) .25s both}
 @keyframes mixin{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0)}}
 .card.empty .actions{margin-top:12px}
+
+/* Waking screen: the traffic light cycles while a sleeping server starts. */
+.wake-light{display:flex;gap:10px;margin:22px 0 4px}
+.wake-light i{width:14px;height:14px;border-radius:50%;background:var(--line2);animation:wake 1.8s infinite}
+.wake-light i:nth-child(1){--c:var(--deny)}.wake-light i:nth-child(2){--c:var(--hold);animation-delay:.6s}.wake-light i:nth-child(3){--c:var(--allow);animation-delay:1.2s}
+@keyframes wake{0%,100%{background:var(--line2);box-shadow:none}15%,30%{background:var(--c);box-shadow:0 0 14px var(--c)}}
+@media (prefers-reduced-motion:reduce){.wake-light i{animation:none;background:var(--hold)}}

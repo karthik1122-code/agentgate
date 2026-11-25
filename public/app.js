@@ -70,6 +70,13 @@ function authScreen(mode = 'login') {
   setTimeout(() => $(named ? 'name' : 'email').focus(), 0);
 }
 
+function wakingScreen() {
+  if (me) return;
+  $('app').hidden = true; const box = $('auth'); box.hidden = false; box.replaceChildren(el('div', { class: 'authcard waking', role: 'status' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
+    el('div', { class: 'wake-light', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')),
+    el('h1', {}, 'Waking the gate'), el('p', { class: 'sub' }, 'The server sleeps when nobody is using it. Starting it takes up to a minute, and only the first visit waits.')));
+}
+
 function offlineScreen() {
   $('app').hidden = true; const box = $('auth'); box.hidden = false; box.replaceChildren(el('div', { class: 'authcard' }, el('div', { class: 'brand' }, el('span', { class: 'mark' }), el('span', { class: 'word' }, 'AgentGate')),
     el('h1', {}, 'Can’t reach the server'), el('p', { class: 'sub' }, 'The dashboard needs its backend, and it did not answer. If it runs on a free host it may be waking up, which can take a minute.'),
@@ -338,7 +345,16 @@ $('openpal').addEventListener('click', palOpen);
 
 async function boot() {
   clearInterval(timer); clearInterval(tick);
-  me = await api('/api/auth/me').catch(() => null);
+  // A free host may be asleep. After a moment, say so with a waking screen, and keep retrying for up to 75 seconds
+  // before giving up, so a cold start reads as "starting" rather than "broken".
+  const slow = setTimeout(wakingScreen, 1800);
+  const deadline = Date.now() + 75000;
+  me = null;
+  while (!me && Date.now() < deadline) {
+    me = await api('/api/auth/me').catch(() => null);
+    if (!me) await new Promise(r => setTimeout(r, 2500));
+  }
+  clearTimeout(slow);
   if (!me) return offlineScreen();
   if (!me.user) return authScreen();
   health = await api('/api/health').catch(() => null);
